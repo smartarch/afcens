@@ -6,7 +6,7 @@ import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.Directives._
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
-import afcens.afccase.{Map, Simulation, SimulationState}
+import afcens.afccase.{ScenarioMap, Simulation, SimulationState}
 import akka.pattern.ask
 
 import scala.concurrent.duration._
@@ -14,7 +14,7 @@ import scala.io.StdIn
 
 object Main extends MarshallersSupport {
   def main(args: Array[String]) {
-    Map.init()
+    ScenarioMap.init()
     implicit val system = ActorSystem("afcens-demo")
     implicit val materializer = ActorMaterializer()
     implicit val executionContext = system.dispatcher
@@ -23,7 +23,7 @@ object Main extends MarshallersSupport {
 
     val simulation = system.actorOf(Simulation.props())
 
-    // simulation ! Simulation.Play
+    simulation ! Simulation.Play(100)
 
     val route =
       path("play") {
@@ -55,13 +55,11 @@ object Main extends MarshallersSupport {
 
     println("Listening on 0.0.0.0:3100.")
 
-    /*
     println("Press ENTER to finish.")
     StdIn.readLine()
 
     bindingFuture
       .flatMap(_.unbind())
       .onComplete(_ => system.terminate())
-    */
   }
 }

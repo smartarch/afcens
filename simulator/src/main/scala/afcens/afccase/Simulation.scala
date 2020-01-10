@@ -77,6 +77,14 @@ class Simulation() extends Actor with Timers with Stash {
 
   private var tickIntervalMs = 0
 
+  flocks += context.actorOf(Flock.props("Flock-1", "Free-1-3"))
+  flocks += context.actorOf(Flock.props("Flock-2", "Free-2-1"))
+  flocks += context.actorOf(Flock.props("Flock-3", "Free-3-2"))
+
+  drones += context.actorOf(Drone.props("Drone-1", "Field-1-3"))
+  drones += context.actorOf(Drone.props("Drone-2", "Field-2-1"))
+  drones += context.actorOf(Drone.props("Drone-3", "Field-3-2"))
+
   processReset()
 
 
@@ -214,11 +222,13 @@ class Simulation() extends Actor with Timers with Stash {
     }
 
     awaitResponses()
+
+    log.debug(simulationState.toString)
   }
 
   private def processResolverTick(): Unit = {
     // TODO - invoke resolver
-
+    tellWithRSVP(resolver, SimStep(currentTime, simulationState))
     awaitResponses()
   }
 
