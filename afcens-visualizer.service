@@ -1,0 +1,14 @@
+[Unit]
+Description=AFCEns Demo Visualisation server
+After=syslog.target network.target mariadb.service redis.service
+
+[Service]
+Environment="NODE_ENV=production"
+WorkingDirectory=/opt/afcens/visualizer/server
+ExecStart=/usr/bin/node index.js
+Type=simple
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

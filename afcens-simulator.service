@@ -1,0 +1,13 @@
+[Unit]
+Description=AFCEns Demo Simulation server
+After=syslog.target network.target 
+
+[Service]
+WorkingDirectory=/opt/afcens/simulator
+ExecStart=/usr/bin/sbt run
+Type=simple
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
