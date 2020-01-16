@@ -12,7 +12,10 @@ case class ScenarioSpec(
                              startTime: LocalDateTime
                            )
 
-case class Position(x: Double, y: Double)
+case class Position(x: Double, y: Double) {
+  def distance(pos: Position) = Math.sqrt((pos.x - x) * (pos.x - x) + (pos.y - y) * (pos.y - y))
+}
+
 case class Area(left: Double, top: Double, right: Double, bottom: Double) {
   def this(topLeft: Position, bottomRight: Position) = this(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
   def contains(pos: Position): Boolean = pos != null && pos.x >= left && pos.y >= top && pos.x <= right && pos.y <= bottom

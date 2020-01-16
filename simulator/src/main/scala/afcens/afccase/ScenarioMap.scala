@@ -1,5 +1,68 @@
 package afcens.afccase
+
+import scala.collection.immutable
+import scala.util.Random
 import scala.xml._
+
+object PositionType extends Enumeration {
+  type PositionType = Value
+  val CHARGE, REST, FIELD, FREE = Value
+}
+
+import afcens.afccase.PositionType._
+
+abstract class PositionId {
+  def position: Position = ScenarioMap(toString)
+}
+
+object PositionId {
+  def getClosestTo[T >: Null <: PositionId](position: Position, positionIds: Iterable[T]): T = {
+    var closestId: T = null
+    var closestDistance: Double = 0
+
+    for (positionId <- positionIds) {
+      val distance = positionId.position.distance(position)
+      if (closestId == null || distance < closestDistance) {
+        closestId = positionId
+        closestDistance = distance
+      }
+    }
+
+    closestId
+  }
+}
+
+case class ChargerId(idx: Int) extends PositionId {
+  assert(idx >= 0 && idx < ScenarioMap.chargerCount)
+
+  override def toString: String = s"Charge-${idx + 1}"
+}
+
+case class RestId(idx: Int) extends PositionId {
+  assert(idx >= 0 && idx < ScenarioMap.restCount)
+
+  override def toString: String = s"Rest-${idx + 1}"
+}
+
+case class FieldId(idx: Int, subIdx: Int) extends PositionId {
+  assert(idx >= 0 && idx < ScenarioMap.fieldCount)
+  val fieldSize = ScenarioMap.fieldSizes(idx)
+  assert(subIdx >= 0 && subIdx < fieldSize)
+
+  override def toString: String = s"Field-${idx + 1}-${subIdx + 1}"
+
+  def sameFieldIds: Seq[FieldId] = for {
+    otherSubIdx <- 0 until ScenarioMap.fieldSizes(idx)
+  } yield FieldId(idx, otherSubIdx)
+}
+
+case class FreeId(idx: Int, subIdx: Int) extends PositionId {
+  assert(idx >= 0 && idx < ScenarioMap.freeCount)
+  val freeSize = ScenarioMap.freeSizes(idx)
+  assert(subIdx >= 0 && subIdx < freeSize)
+
+  override def toString: String = s"Free-${idx + 1}-${subIdx + 1}"
+}
 
 object ScenarioMap {
   private var positions: Map[String, Position] = _
@@ -39,36 +102,31 @@ object ScenarioMap {
     Free-3-[1..15]
 */
 
-  val chargeCount = 3
+  val chargerCount = 3
   val restCount = 8
 
   val fieldCount = 5
-  val fieldSizes = Map(1 -> 12, 2 -> 10, 3 -> 6, 4 -> 6, 5 -> 10)
+  val fieldSizes = Map(0 -> 12, 1 -> 10, 2 -> 6, 3 -> 6, 4 -> 10)
 
   val freeCount = 3
-  val freeSizes = Map(1 -> 15, 2 -> 9, 3 -> 15)
+  val freeSizes = Map(0 -> 15, 1 -> 9, 2 -> 15)
 
-  def chargeId(idx: Int) = {
-    assert(idx >= 1 && idx <= chargeCount)
-    s"Charge-${idx}"
-  }
+  val allChargerIds = for {
+    idx <- 0 until chargerCount
+  } yield ChargerId(idx)
 
-  def restId(idx: Int) = {
-    assert(idx >= 1 && idx <= restCount)
-    s"Rest-${idx}"
-  }
+  val allFieldIds = for {
+    idx <- 0 until fieldCount
+    subIdx <- 0 until fieldSizes(idx)
+  } yield FieldId(idx, subIdx)
 
-  def fieldId(idx: Int, subIdx: Int) = {
-    assert(idx >= 1 && idx <= fieldCount)
-    val fieldSize = fieldSizes(idx)
-    assert(subIdx >= 1 && subIdx <= fieldSize)
-    s"Field-${idx}-${subIdx}"
-  }
+  def randomFieldId(implicit rand: Random): FieldId = allFieldIds(rand.nextInt(allFieldIds.length))
 
-  def freeId(idx: Int, subIdx: Int) = {
-    assert(idx >= 1 && idx <= freeCount)
-    val freeSize = freeSizes(idx)
-    assert(subIdx >= 1 && subIdx <= freeSize)
-    s"Free-${idx}-${subIdx}"
-  }
+  val allFreeIds = for {
+    idx <- 0 until freeCount
+    subIdx <- 0 until freeSizes(idx)
+  } yield FreeId(idx, subIdx)
+
+  def randomFreeId(implicit rand: Random): FreeId = allFreeIds(rand.nextInt(allFreeIds.length))
+
 }

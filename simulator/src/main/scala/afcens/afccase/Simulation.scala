@@ -10,8 +10,8 @@ import akka.util.Timeout
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-case class DroneState(position: Position)
-case class FlockState(position: Position)
+case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId])
+case class FlockState(mode: FlockMode.FlockMode, position: Position)
 case class ResolutionResult()
 case class SimulationState(time: String, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], ensembles: ResolutionResult)
 
@@ -77,13 +77,13 @@ class Simulation() extends Actor with Timers with Stash {
 
   private var tickIntervalMs = 0
 
-  flocks += context.actorOf(Flock.props("Flock-1", "Free-1-3"))
-  flocks += context.actorOf(Flock.props("Flock-2", "Free-2-1"))
-  flocks += context.actorOf(Flock.props("Flock-3", "Free-3-2"))
+  flocks += context.actorOf(Flock.props(), "Flock-1")
+  flocks += context.actorOf(Flock.props(), "Flock-2")
+  flocks += context.actorOf(Flock.props(), "Flock-3")
 
-  drones += context.actorOf(Drone.props("Drone-1", "Field-1-3"))
-  drones += context.actorOf(Drone.props("Drone-2", "Field-2-1"))
-  drones += context.actorOf(Drone.props("Drone-3", "Field-3-2"))
+  drones += context.actorOf(Drone.props(), "Drone-1")
+  drones += context.actorOf(Drone.props(), "Drone-2")
+  drones += context.actorOf(Drone.props(), "Drone-3")
 
   processReset()
 
@@ -143,7 +143,7 @@ class Simulation() extends Actor with Timers with Stash {
       timers.cancel(TickTimer)
     }
 
-    currentTime = null
+    currentTime = startTime
     ticksToResolution = 0
     droneStates.clear()
     flockStates.clear()
@@ -189,11 +189,7 @@ class Simulation() extends Actor with Timers with Stash {
   private def processTick(): Unit = {
     assert(state == PLAYING)
 
-    if (currentTime == null) {
-      currentTime = startTime
-    } else {
-      currentTime = currentTime plusSeconds(10)
-    }
+    currentTime = currentTime plusSeconds(10)
 
     val simulationStateSnapshot = simulationState
 

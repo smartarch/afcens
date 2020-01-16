@@ -18,7 +18,7 @@ em.on('client.installRoutes', (structure, t) => {
         secondaryMenuComponent: null
     };
 
-    structure.link = () => ivisConfig.isAuthenticated ? '/workspaces/scenario-map' : '/login';
+    structure.link = () => ivisConfig.isAuthenticated ? '/workspaces' : '/login';
 });
 
 em.on('client.mainMenuAuthenticated.installWorkspaces', (workspaces, t) => {

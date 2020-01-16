@@ -15,6 +15,7 @@ import moment from "moment";
 import {SVG} from "../../ivis-core/client/src/ivis/SVG";
 import scenarioMapSvg from "../images/fields-symbols.svg";
 import { select, event as d3Event, mouse } from 'd3-selection';
+import * as d3Format from "d3-format";
 
 const State = {
     START: 0,
@@ -28,6 +29,13 @@ const AgentType = {
     FLOCK: 1
 };
 
+const agentSymbolOffsets = {
+    [AgentType.DRONE]: {x: -9.5, y: -2.5},
+    [AgentType.FLOCK]: {x: -6, y: -6}
+};
+
+const agentSymbolSizeHalf = 5;
+
 const refreshInterval = 50;
 const minorStepsInRefetchPeriod = 5;
 
@@ -39,6 +47,8 @@ const minorStepsInRefetchPeriod = 5;
 ])export default class ScenarioMap extends Component {
     constructor(props) {
         super(props);
+
+        const t = props.t;
 
         this.state = {
             playState: State.START,
@@ -54,7 +64,25 @@ const minorStepsInRefetchPeriod = 5;
         this.agentTypeLabels = {
             [AgentType.DRONE]: t('Drone'),
             [AgentType.FLOCK]: t('Flock'),
-        }
+        };
+
+        this.droneModeLabels = {
+            0: t('Flying to charger'),
+            1: t('Charging'),
+            2: t('Patrolling'),
+            3: t('Pursuing'),
+            4: t('Resting'),
+            5: t('Dead'),
+            6: t('Idle')
+        };
+
+        this.flockModeLabels = {
+            0: t('Flying to rest'),
+            1: t('Flying to eat'),
+            2: t('Eating'),
+            3: t('Resting'),
+            4: t('Idle')
+        };
     }
 
     reset() {
@@ -111,15 +139,19 @@ const minorStepsInRefetchPeriod = 5;
                 const drone = resp.data.drones[droneKey];
                 agents[droneKey] = {
                     type: AgentType.DRONE,
-                    position: drone.position
+                    position: drone.position,
+                    mode: drone.mode,
+                    energy: drone.energy,
+                    chargingInChargerId: drone.chargingInChargerId
                 };
             }
 
             for (const flockKey in resp.data.flocks) {
-                const flock = resp.data.drones[flockKey];
+                const flock = resp.data.flocks[flockKey];
                 agents[flockKey] = {
                     type: AgentType.FLOCK,
-                    position: flock.position
+                    position: flock.position,
+                    mode: flock.mode
                 };
             }
 
@@ -174,20 +206,25 @@ const minorStepsInRefetchPeriod = 5;
                             
                             const type = lastAgent.type;
 
-                            let symbol;
-                            if (type === AgentType.DRONE) {
-                                symbol = 'Drone';
-                            } else if (type === AgentType.FLOCK) {
-                                symbol = 'Bird';
-                            }
-
-                            agents.push({
+                            const frame = {
                                 id: key,
                                 type,
-                                symbol,
                                 x: interp(lastAgent.position.x, nextAgent.position.x),
                                 y: interp(lastAgent.position.y, nextAgent.position.y),
-                            });
+                            };
+
+                            if (type === AgentType.DRONE) {
+                                frame.symbol = 'Drone';
+                                frame.mode = lastAgent.mode;
+                                frame.energy = interp(lastAgent.energy, nextAgent.energy);
+                                frame.chargingInChargerId = lastAgent.chargingInChargerId;
+
+                            } else if (type === AgentType.FLOCK) {
+                                frame.symbol = 'Bird';
+                                frame.mode = lastAgent.mode;
+                            }
+
+                            agents.push(frame);
                         }
                     }
 
@@ -225,6 +262,8 @@ const minorStepsInRefetchPeriod = 5;
 
     render() {
         const t = this.props.t;
+        const energyF = d3Format.format(".0f");
+
         const playState = this.state.playState;
 
         const ts = this.state.ts;
@@ -236,16 +275,37 @@ const minorStepsInRefetchPeriod = 5;
             let selAgent = this.state.agents.find(agent => agent.id === selAgentId);
 
             if (selAgent) {
-                agentDetails = (
-                    <>
-                        <div className={`card-body ${styles.detailsSection}`}>
-                            <div className={`card-title ${styles.detailsSectionHeader}`}>{t('Identification')}</div>
+                agentDetails = [
+                    <div key="common" className={`card-body ${styles.detailsSection}`}>
+                        <div className={`card-title ${styles.detailsSectionHeader}`}>{t('Identification')}</div>
+                        <div className="card-text">
+                            {selAgentId}
+                        </div>
+                    </div>
+                ];
+
+                if (selAgent.type === AgentType.DRONE) {
+                    agentDetails.push(
+                        <div key="droneDetails" className={`card-body ${styles.detailsSection}`}>
+                            <div className={`card-title ${styles.detailsSectionHeader}`}>{t('Drone status')}</div>
                             <div className="card-text">
-                                {this.agentTypeLabels[selAgent.type]}: {selAgentId}
+                                <div>{t('Mode')}: {this.droneModeLabels[selAgent.mode]}</div>
+                                <div>{t('Energy')}: {energyF(selAgent.energy * 100)}%</div>
                             </div>
                         </div>
-                    </>
-                );
+                    )
+                }
+
+                if (selAgent.type === AgentType.FLOCK) {
+                    agentDetails.push(
+                        <div key="flockDetails" className={`card-body ${styles.detailsSection}`}>
+                            <div className={`card-title ${styles.detailsSectionHeader}`}>{t('Flock status')}</div>
+                            <div className="card-text">
+                                <div>{t('Mode')}: {this.flockModeLabels[selAgent.mode]}</div>
+                            </div>
+                        </div>
+                    )
+                }
 
             } else {
                 agentDetails = (
@@ -295,7 +355,6 @@ const minorStepsInRefetchPeriod = 5;
                                 init={node => {
                                     const viewBox = node.viewBox.baseVal;
                                     const nodeSel = select(node);
-                                    const agentSizeHalf = 8.66 / 2; // FIXME
 
                                     nodeSel
                                         .append('rect')
@@ -311,7 +370,7 @@ const minorStepsInRefetchPeriod = 5;
                                             const y = mousePos[1];
                                             let selectedAgent = null;
                                             for (const agent of this.state.agents) {
-                                                if (agent.x - agentSizeHalf <= x && agent.x + agentSizeHalf >= x && agent.y - agentSizeHalf <= y && agent.y + agentSizeHalf >= y) {
+                                                if (agent.x - agentSymbolSizeHalf <= x && agent.x + agentSymbolSizeHalf >= x && agent.y - agentSymbolSizeHalf <= y && agent.y + agentSymbolSizeHalf >= y) {
                                                     selectedAgent = agent.id;
                                                 }
                                             }
@@ -339,8 +398,8 @@ const minorStepsInRefetchPeriod = 5;
                                         node.selectAll('use')
                                             .data(agents, d => d.id)
                                             .attr('href', d => (d.id === this.state.selectedAgent ? "#" : "#") + d.symbol) // FIXME "#selected-"
-                                            .attr('x', d => d.x - 10)
-                                            .attr('y', d => d.y - 10);
+                                            .attr('x', d => d.x + agentSymbolOffsets[d.type].x)
+                                            .attr('y', d => d.y + agentSymbolOffsets[d.type].y);
                                     }
                                 }}
                             />
