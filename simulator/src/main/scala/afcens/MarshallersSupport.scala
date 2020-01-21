@@ -32,7 +32,7 @@ trait MarshallersSupport extends SprayJsonSupport with DefaultJsonProtocol {
   implicit val positionFormat = jsonFormat2(Position)
   implicit val chargerIdFormat = jsonFormat1(ChargerId)
   implicit val droneStateFormat = jsonFormat4(DroneState)
-  implicit val flockStateFormat = jsonFormat2(FlockState)
+  implicit val flockStateFormat = jsonFormat3(FlockState)
   implicit val resolutionResultFormat = jsonFormat0(ResolutionResult)
   implicit val simulationStateFormat = jsonFormat5(SimulationState)
 }

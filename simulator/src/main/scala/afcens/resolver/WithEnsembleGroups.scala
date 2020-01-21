@@ -80,6 +80,7 @@ trait WithEnsembleGroups extends Initializable with CommonImplicits {
     */
   override private[resolver] def _init(stage: InitStages, config: Config): Unit = {
     super._init(stage, config)
+
     _ensembleGroups.foreach(_._init(stage, config))
 
     stage match {

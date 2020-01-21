@@ -68,4 +68,7 @@ class EnsembleGroup[+EnsembleType <: Ensemble](
   }
 
   override def toString: String = s"<EnsembleGroup:$allMembersVarName:$name>"
+
+  override def describe: String =
+    s"""EnsembleGroup "$name":${Utils.renderContent(selectedMembers.map(_.describe))}"""
 }

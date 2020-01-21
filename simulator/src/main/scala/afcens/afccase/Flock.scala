@@ -57,6 +57,8 @@ class Flock() extends Actor {
 
   private var observedDrones: List[ObservedDrone] = _
 
+  private def flockState = FlockState(mode, currentPos, observedDrones.map(_.position))
+
   private def processReset(): FlockState = {
     mode = IDLE
     currentPos = startPosId.position
@@ -64,7 +66,7 @@ class Flock() extends Actor {
     targetPosId = startPosId
     observedDrones = List.empty[ObservedDrone]
 
-    FlockState(mode, currentPos)
+    flockState
   }
 
   private def processStep(currentTime: LocalDateTime, simulationState: SimulationState): FlockState = {
@@ -139,7 +141,7 @@ class Flock() extends Actor {
       currentPos = targetPos
     }
 
-    FlockState(mode, currentPos)
+    flockState
   }
 
   def receive = {

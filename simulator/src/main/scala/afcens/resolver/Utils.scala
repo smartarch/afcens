@@ -10,6 +10,13 @@ private[resolver] object Utils {
     joined + (if (str.endsWith("\n")) "\n" else "") // handle end newline
   }
 
+  private[resolver] def renderContent(content: Iterable[String]): String = {
+    if (content.isEmpty)
+      " [Empty]"
+    else
+      "\n" + indent(content.mkString("\n"), 1)
+  }
+
   /** Counter for generated names. */
   private var randomNameIdx = 0
 

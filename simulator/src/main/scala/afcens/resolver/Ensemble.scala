@@ -22,10 +22,11 @@ import scala.language.implicitConversions
 trait Ensemble
     extends Initializable
     with WithName
-    with WithUtility
+    with WithDescription
     with WithSelectionStatus
     with WithEnsembleGroups
     with WithRoles
+    with WithUtility
     with WithActions
     with WithConstraints
     with CommonImplicits {
@@ -61,6 +62,10 @@ trait Ensemble
   }
 
   override def toString: String = s"<Ensemble:$name>"
+
+  def describe: String =
+    s"""Ensemble "$name":${Utils.renderContent((_roles ++ _ensembleGroups).map(_.describe))}"""
+
 
   /** Convert an `EnsembleGroup` to its members.
     *

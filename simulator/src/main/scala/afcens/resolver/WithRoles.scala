@@ -19,7 +19,7 @@ trait WithRoles extends Initializable with CommonImplicits {
   private type Role[T] = MemberGroup[T]
 
   /** List of role objects. */
-  private val _roles = mutable.ArrayBuffer.empty[Role[Component]]
+  private[resolver] val _roles = mutable.ArrayBuffer.empty[Role[Component]]
 
   /** Create a role inhabited by one of the components.
     *

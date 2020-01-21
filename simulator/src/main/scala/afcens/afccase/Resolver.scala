@@ -10,50 +10,40 @@ import afcens.afccase.Simulation.{Reset, SimReset, SimStep}
 import scala.collection.mutable
 
 object Resolver {
-  def props(scenarioSpec: ScenarioSpec) = Props(new Resolver(scenarioSpec))
+  def props() = Props(new Resolver())
 }
 
-class Resolver(val scenarioSpec: ScenarioSpec) extends Actor {
+class Resolver() extends Actor {
   import Resolver._
 
   private val log = Logging(context.system, this)
 
   private val solverLimitTime = 60000000000L
 
-  private var scenario: Scenario = _
-
-  private var currentEpoch: Int = _
-
-
   private def processStep(currentTime: LocalDateTime, simulationState: SimulationState): ResolutionResult = {
-    // log.info("Resolver started")
-    // log.info("Time: " + currentTime)
-    // log.info("Events: " + events)
+    log.debug("Resolver processStep")
+    val scenario = new Scenario(simulationState)
 
+    log.debug("Resolver started")
+    val startTime = System.currentTimeMillis
 
-    /*
-    scenario.now = currentTime
+    val root = scenario.root
 
-    val factoryTeam = scenario.factoryTeam
-    factoryTeam.init()
-    factoryTeam.solverLimitTime(solverLimitTime)
-    factoryTeam.solve()
-        if (factoryTeam.exists) {
-      // log.info("Utility: " + shiftTeams.instance.solutionUtility)
-      // log.info(shiftTeams.instance.toString)
+    if (root.resolve(solverLimitTime)) {
+      val endTime = System.currentTimeMillis
 
-      factoryTeam.commit()
+      log.info(s"Solution found in ${endTime - startTime} ms. Utility: " + root.instance.solutionUtility)
+      log.info(root.instance.describe)
 
     } else {
-      log.error("Error. No solution exists.")
+      val endTime = System.currentTimeMillis
+      log.error(s"Error. No solution exists. Took ${endTime - startTime} ms to compute.")
     }
-    */
 
     ResolutionResult()
   }
 
   private def processReset(): ResolutionResult = {
-    scenario = new Scenario(scenarioSpec)
     ResolutionResult()
   }
 

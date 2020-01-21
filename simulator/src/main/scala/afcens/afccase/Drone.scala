@@ -54,6 +54,8 @@ class Drone() extends Actor {
   private var energy: Double = _
   private var chargingInChargerId: Option[ChargerId] = None
 
+  private def droneState = DroneState(mode, currentPos, energy, chargingInChargerId)
+
   private def processReset(): DroneState = {
     mode = IDLE
     currentPos = startPosId.position
@@ -62,7 +64,7 @@ class Drone() extends Actor {
     chargingInChargerId = None
     energy = 1
 
-    DroneState(mode, currentPos, energy, chargingInChargerId)
+    droneState
   }
 
   private def processStep(currentTime: LocalDateTime, simulationState: SimulationState): DroneState = {
@@ -179,7 +181,7 @@ class Drone() extends Actor {
       }
     }
 
-    DroneState(mode, currentPos, energy, chargingInChargerId)
+    droneState
   }
 
   def receive = {

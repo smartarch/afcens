@@ -22,7 +22,8 @@ import scala.reflect.ClassTag
   */
 class MemberGroup[+MemberType](val name: String, values: Iterable[MemberType])
     extends Initializable
-    with CommonImplicits {
+    with CommonImplicits
+    with WithDescription {
 
   /** Name of the underlying `SetVar` */
   private[resolver] val allMembersVarName: String = "G_" + randomName
@@ -231,4 +232,7 @@ class MemberGroup[+MemberType](val name: String, values: Iterable[MemberType])
       yield allMembers(idx)
 
   override def toString: String = s"<MemberGroup:$allMembersVarName:$name>"
+
+  def describe: String =
+    s"""MemberGroup "$name":${Utils.renderContent(selectedMembers.map{case x: WithDescription => x.describe})}"""
 }

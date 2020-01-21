@@ -7,8 +7,13 @@ import InitStages.InitStages
   * Provides a DSL function for setting the utility expression, and functionality that
   * collects utilities from sub-ensembles.
   */
-trait WithUtility extends Initializable {
-  this: WithEnsembleGroups =>
+trait WithUtility extends Initializable
+
+  /* This is here solely for the sake of enforcing that WithUtility is mixes after WithRoles and WithEnsembleGroups.
+     Thanks to this, the utility is initialized from leaves to root.
+   */
+  with WithRoles with WithEnsembleGroups {
+  this: WithSelectionStatus with WithConstraints =>
 
   /** Configured utility function. */
   private var _utilityFun: Option[() => Integer] = None
@@ -20,7 +25,7 @@ trait WithUtility extends Initializable {
     * by the solver, producing new `IntVar`s can mean that the solver-registered
     * variable becomes stale.
     */
-  private var _utility: Option[Integer] = None
+  private[resolver] var _utility: Option[Integer] = None
 
   /** Set the utility expression.
     *
@@ -33,12 +38,6 @@ trait WithUtility extends Initializable {
   def utility(util: => Integer): Unit = {
     _utilityFun = Some(util _)
   }
-
-  /*  TODO this doesn't seem necessary?
-  private[resolver] def _getUtility: Option[Integer] = _utility
-
-  def utility: Integer = _getUtility.getOrElse(_solverModel.IntegerInt(0))
-   */
 
   /** Utility variable of this ensemble.
     *
@@ -55,34 +54,6 @@ trait WithUtility extends Initializable {
   def solutionUtility: Int = _utility match {
     case Some(value) => value.asInt
     case None        => 0
-  }
-
-  /** True if this ensemble or any of its sub-ensembles have a utility expression. */
-  private[resolver] def _hasUtility: Boolean = {
-    val childrenHaveUtility = _ensembleGroups.flatMap(g => g.allMembers).exists(_._hasUtility)
-    _utilityFun.nonEmpty || childrenHaveUtility
-  }
-
-  /** Find the total utility of this ensemble and its sub-ensembles.
-    *
-    * The result is an `Option[Integer]`, indicating whether an utility expression was
-    * set anywhere in this sub-tree of the ensemble hierarchy. If not, the information
-    * needs to be propagated to the root, so that the solver object is properly
-    * configured with regard to optimization.
-    *
-    * @return an Integer value representing total utility of this ensemble and all its
-    *         sub-ensembles, if at least one utility expression is configured. `None` if
-    *         no utility expression is set in this ensemble nor in any of its sub-ensembles.
-    */
-  private[resolver] def _collectUtility: Option[Integer] = {
-    if (!_hasUtility) None
-    else {
-      val subUtilities = _ensembleGroups.map(
-        g => g.sum(_._collectUtility.getOrElse(_solverModel.IntegerInt(0)))
-      )
-      val subUtilitySum = subUtilities.reduceOption(_ + _).getOrElse(_solverModel.IntegerInt(0))
-      Some(utility + subUtilitySum)
-    }
   }
 
   /** Initialization hook.

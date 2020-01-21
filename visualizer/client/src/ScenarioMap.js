@@ -15,6 +15,7 @@ import moment from "moment";
 import {SVG} from "../../ivis-core/client/src/ivis/SVG";
 import scenarioMapSvg from "../images/fields-symbols.svg";
 import { select, event as d3Event, mouse } from 'd3-selection';
+import { rgb } from 'd3-color';
 import * as d3Format from "d3-format";
 
 const State = {
@@ -32,6 +33,21 @@ const AgentType = {
 const agentSymbolOffsets = {
     [AgentType.DRONE]: {x: -9.5, y: -2.5},
     [AgentType.FLOCK]: {x: -6, y: -6}
+};
+
+const agentVisibilityRadiuses = {
+    [AgentType.DRONE]: {r: 50, color: rgb(3, 182, 252)},
+    [AgentType.FLOCK]: {r: 50, color: rgb(252, 194, 3)}
+};
+
+const flockDisturbRadius = {
+    r: 15,
+    color: rgb(252, 98, 3)
+};
+
+const flockObservedRadius = {
+    r: 15 - 6 /* 6 is the radius of the flock */,
+    color: rgb(24, 64, 24)
 };
 
 const agentSymbolSizeHalf = 5;
@@ -54,7 +70,9 @@ const minorStepsInRefetchPeriod = 5;
             playState: State.START,
             ts: null,
             agents: [],
-            selectedAgent: null
+            selectedAgent: null,
+            visibilityRadiusVisible: false,
+            observedForSelectedVisible: false
         };
 
         this.reset();
@@ -151,7 +169,8 @@ const minorStepsInRefetchPeriod = 5;
                 agents[flockKey] = {
                     type: AgentType.FLOCK,
                     position: flock.position,
-                    mode: flock.mode
+                    mode: flock.mode,
+                    observedDrones: flock.observedDrones
                 };
             }
 
@@ -222,6 +241,7 @@ const minorStepsInRefetchPeriod = 5;
                             } else if (type === AgentType.FLOCK) {
                                 frame.symbol = 'Bird';
                                 frame.mode = lastAgent.mode;
+                                frame.observedDrones = lastAgent.observedDrones;
                             }
 
                             agents.push(frame);
@@ -271,8 +291,9 @@ const minorStepsInRefetchPeriod = 5;
 
         const selAgentId = this.state.selectedAgent;
         let agentDetails;
+        let selAgent;
         if (selAgentId) {
-            let selAgent = this.state.agents.find(agent => agent.id === selAgentId);
+            selAgent = this.state.agents.find(agent => agent.id === selAgentId);
 
             if (selAgent) {
                 agentDetails = [
@@ -348,6 +369,10 @@ const minorStepsInRefetchPeriod = 5;
                                 <Button className={`btn-danger ${styles.controlButton}`} icon="stop" onClickAsync={::this.stop} disabled={playState === State.START}/>
                                 <span className={styles.timestamp}>{tsFormatted}</span>
                             </div>
+                            <div className="col-12 col-lg-3 mb-3 text-lg-right">
+                                <Button className={`btn-info ${styles.controlButton}`} icon="bullseye" onClickAsync={async () => this.setState({visibilityRadiusVisible: !this.state.visibilityRadiusVisible})} />
+                                {selAgent && selAgent.type === AgentType.FLOCK && <Button className={`btn-info ${styles.controlButton}`} icon="eye" onClickAsync={async () => this.setState({observedForSelectedVisible: !this.state.observedForSelectedVisible})} /> }
+                            </div>
                         </div>
                         <div>
                             <SVG
@@ -355,6 +380,27 @@ const minorStepsInRefetchPeriod = 5;
                                 init={node => {
                                     const viewBox = node.viewBox.baseVal;
                                     const nodeSel = select(node);
+
+                                    nodeSel
+                                        .select('#Positions')
+                                        .attr('display', 'none');
+
+                                    nodeSel
+                                        .append('g')
+                                        .attr('id', 'Agents');
+
+                                    nodeSel
+                                        .append('g')
+                                        .attr('id', 'VisibilityRadiuses');
+
+                                    nodeSel
+                                        .append('g')
+                                        .attr('id', 'FlockDisturbRadiuses');
+
+                                    nodeSel
+                                        .append('g')
+                                        .attr('id', 'FlockObservations')
+                                        .attr('opacity', 0.4);
 
                                     nodeSel
                                         .append('rect')
@@ -376,10 +422,6 @@ const minorStepsInRefetchPeriod = 5;
                                             }
                                             this.setState({selectedAgent});
                                         });
-
-                                    nodeSel
-                                        .select('#Positions')
-                                        .attr('display', 'none');
                                 }}
                                 data={{
                                     Agents: node => {
@@ -400,6 +442,75 @@ const minorStepsInRefetchPeriod = 5;
                                             .attr('href', d => (d.id === this.state.selectedAgent ? "#" : "#") + d.symbol) // FIXME "#selected-"
                                             .attr('x', d => d.x + agentSymbolOffsets[d.type].x)
                                             .attr('y', d => d.y + agentSymbolOffsets[d.type].y);
+                                    },
+                                    VisibilityRadiuses: node => {
+                                        const agents = this.state.visibilityRadiusVisible ? this.state.agents : [];
+
+                                        node.selectAll('circle')
+                                            .data(agents, d => d.id)
+                                            .enter()
+                                            .append('circle');
+
+                                        node.selectAll('circle')
+                                            .data(agents, d => d.id)
+                                            .exit()
+                                            .remove();
+
+                                        node.selectAll('circle')
+                                            .data(agents, d => d.id)
+                                            .attr('cx', d => d.x)
+                                            .attr('cy', d => d.y)
+                                            .attr('r', d => agentVisibilityRadiuses[d.type].r)
+                                            .attr('stroke', d => agentVisibilityRadiuses[d.type].color)
+                                            .attr('stroke-width', 1)
+                                            .attr('fill', 'none');
+                                    },
+                                    FlockDisturbRadiuses: node => {
+                                        const agents = this.state.visibilityRadiusVisible ? this.state.agents.filter(x => x.type === AgentType.FLOCK) : [];
+
+                                        node.selectAll('circle')
+                                            .data(agents, d => d.id)
+                                            .enter()
+                                            .append('circle');
+
+                                        node.selectAll('circle')
+                                            .data(agents, d => d.id)
+                                            .exit()
+                                            .remove();
+
+                                        node.selectAll('circle')
+                                            .data(agents, d => d.id)
+                                            .attr('cx', d => d.x)
+                                            .attr('cy', d => d.y)
+                                            .attr('r', flockDisturbRadius.r)
+                                            .attr('stroke', flockDisturbRadius.color)
+                                            .attr('stroke-width', 1)
+                                            .attr('fill', 'none');
+                                    },
+                                    FlockObservations: node => {
+                                        let spots = [];
+
+                                        if (selAgent && selAgent.type === AgentType.FLOCK && this.state.observedForSelectedVisible) {
+                                            spots = selAgent.observedDrones.map(pos => ({id: `${pos.x}-${pos.y}`, x: pos.x, y: pos.y}));
+                                        }
+
+                                        node.selectAll('circle')
+                                            .data(spots, d => d.id)
+                                            .enter()
+                                            .append('circle');
+
+                                        node.selectAll('circle')
+                                            .data(spots, d => d.id)
+                                            .exit()
+                                            .remove();
+
+                                        node.selectAll('circle')
+                                            .data(spots, d => d.id)
+                                            .attr('cx', d => d.x)
+                                            .attr('cy', d => d.y)
+                                            .attr('r', flockObservedRadius.r)
+                                            .attr('fill', flockObservedRadius.color)
+                                            .attr('stroke', 'none');
                                     }
                                 }}
                             />

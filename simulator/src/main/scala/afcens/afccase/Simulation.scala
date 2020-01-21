@@ -3,15 +3,14 @@ package afcens.afccase
 import java.time.format.DateTimeFormatter
 import java.time.{Duration, LocalDateTime, ZoneOffset}
 
-import akka.actor.{Actor, ActorRef, Props, Timers, Stash}
+import akka.actor.{Actor, ActorRef, Props, Stash, Timers}
 import akka.event.Logging
-import akka.util.Timeout
 
 import scala.collection.mutable
 import scala.concurrent.duration._
 
 case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId])
-case class FlockState(mode: FlockMode.FlockMode, position: Position)
+case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position])
 case class ResolutionResult()
 case class SimulationState(time: String, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], ensembles: ResolutionResult)
 
@@ -20,9 +19,10 @@ abstract class RSVPMessage {
   val uuid = java.util.UUID.randomUUID.toString
 }
 
-final case class DroneAck(origUUID: String, state: DroneState)
-final case class FlockAck(origUUID: String, state: FlockState)
-final case class ResolverAck(origUUID: String, result: ResolutionResult)
+abstract class Ack
+final case class DroneAck(origUUID: String, state: DroneState) extends Ack
+final case class FlockAck(origUUID: String, state: FlockState) extends Ack
+final case class ResolverAck(origUUID: String, result: ResolutionResult) extends Ack
 
 object Simulation {
   def props() = Props(new Simulation())
@@ -51,10 +51,86 @@ object Simulation {
 }
 
 class Simulation() extends Actor with Timers with Stash {
+  simulation =>
+
   import Simulation.State._
   import Simulation._
 
   private val log = Logging(context.system, this)
+
+  private class Awaiter(val name: String) {
+    val awaitedResponses = mutable.HashMap.empty[String, String] // uuid -> actor name
+
+    def tellWithRSVP(actor: ActorRef, msg: RSVPMessage): Unit = {
+      actor ! msg
+      awaitedResponses += msg.uuid -> actor.path.name
+    }
+
+    def awaitResponses(): Unit = {
+      if (!awaitedResponses.isEmpty) {
+        context.become(receive)
+        unstashAll()
+      }
+    }
+
+    def removeAwait(uuid: String): Boolean = {
+      if (awaitedResponses.contains(uuid) && awaitedResponses(uuid) == sender.path.name) {
+        awaitedResponses -= uuid
+
+        if (awaitedResponses.isEmpty) {
+          context.become(simulation.receive)
+          unstashAll()
+        }
+
+        true
+      } else {
+        log.warning("Ack message uuid not found. Dropping the ACK")
+        false
+      }
+    }
+
+    def receive: Receive = {
+      case Tick =>
+        log.debug(s"Awaiter[${name}].Tick")
+        log.warning("Dropping one tick")
+
+      case msg =>
+        log.debug(s"Awaiter[${name}]._ ... ${msg}")
+        stash()
+    }
+  }
+
+  private trait SimStepAwaiter extends Awaiter {
+    override def receive: Receive = ({
+      case DroneAck(origUUID, state) =>
+        log.debug(s"SimStepAwaiter[${name}].DroneAck")
+        if (removeAwait(origUUID)) {
+          droneStates(sender.path.name) = state
+        }
+
+      case FlockAck(origUUID, state) =>
+        log.debug(s"SimStepAwaiter[${name}].FlockAck")
+        if (removeAwait(origUUID)) {
+          flockStates(sender.path.name) = state
+        }
+
+    }: Receive) orElse(super.receive)
+  }
+
+  private trait ResolverAwaiter extends Awaiter {
+    override def receive: Receive = ({
+      case ResolverAck(origUUID, result) =>
+        log.debug(s"ResolverAwaiter[${name}].ResolverAck")
+        if (removeAwait(origUUID)) {
+          resolutionResult = result
+        }
+
+    }: Receive) orElse(super.receive)
+  }
+
+  private object simStepAwaiter extends Awaiter("simStep") with SimStepAwaiter
+  private object resolverAwaiter extends Awaiter("resolver") with ResolverAwaiter
+  private object resetAwaiter extends Awaiter("reset") with SimStepAwaiter with ResolverAwaiter
 
   private var state = START
   private var currentTime: LocalDateTime = _
@@ -63,17 +139,13 @@ class Simulation() extends Actor with Timers with Stash {
   private val startTime = LocalDateTime.parse("2020-01-01T08:00:00")
   private val endTime = startTime plus Duration.ofHours(10)
 
-  private val scenarioSpec = TestScenario.createScenarioSpec(droneCount = 3, flockCount = 2, startTime)
-
-  private val resolver = context.actorOf(Resolver.props(scenarioSpec), name = "resolver")
+  private val resolver = context.actorOf(Resolver.props(), name = "resolver")
   private var drones = mutable.ListBuffer.empty[ActorRef]
   private var flocks = mutable.ListBuffer.empty[ActorRef]
 
   private val droneStates = mutable.HashMap.empty[String, DroneState]
   private val flockStates = mutable.HashMap.empty[String, FlockState]
   private var resolutionResult: ResolutionResult = null
-
-  private val awaitedResponses = mutable.HashMap.empty[String, String] // uuid -> actor name
 
   private var tickIntervalMs = 0
 
@@ -86,48 +158,6 @@ class Simulation() extends Actor with Timers with Stash {
   drones += context.actorOf(Drone.props(), "Drone-3")
 
   processReset()
-
-
-  private def tellWithRSVP(actor: ActorRef, msg: RSVPMessage): Unit = {
-    actor ! msg
-    awaitedResponses += msg.uuid -> actor.path.name
-  }
-
-  private def awaitResponses(): Unit = {
-    if (!awaitedResponses.isEmpty) {
-      context.become(awaitingResponses)
-    }
-  }
-
-  private def removeAwait(uuid: String, sender: ActorRef): Unit = {
-    assert(awaitedResponses(uuid) == sender.path.name)
-    awaitedResponses -= uuid
-
-    if (awaitedResponses.isEmpty) {
-      context.become(receive)
-      unstashAll()
-    }
-  }
-
-  def awaitingResponses: Receive = {
-    case Tick =>
-      log.warning("Dropping one tick")
-
-    case DroneAck(origUUID, state) =>
-      droneStates(awaitedResponses(origUUID)) = state
-      removeAwait(origUUID, sender())
-
-    case FlockAck(origUUID, state) =>
-      flockStates(awaitedResponses(origUUID)) = state
-      removeAwait(origUUID, sender())
-
-    case ResolverAck(origUUID, result) =>
-      resolutionResult = result
-      removeAwait(origUUID, sender())
-
-    case _ => stash()
-  }
-
 
   private def simulationState = SimulationState(
     currentTime.atZone(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
@@ -149,17 +179,17 @@ class Simulation() extends Actor with Timers with Stash {
     flockStates.clear()
     resolutionResult = null
 
-    tellWithRSVP(resolver, SimReset())
+    resetAwaiter.tellWithRSVP(resolver, SimReset())
 
     for (drone <- drones) {
-      tellWithRSVP(drone, SimReset())
+      resetAwaiter.tellWithRSVP(drone, SimReset())
     }
 
     for (flock <- flocks) {
-      tellWithRSVP(flock, SimReset())
+      resetAwaiter.tellWithRSVP(flock, SimReset())
     }
 
-    awaitResponses()
+    resetAwaiter.awaitResponses()
   }
 
   private def processPlay(tickIntervalMs: Int): Unit = {
@@ -194,11 +224,11 @@ class Simulation() extends Actor with Timers with Stash {
     val simulationStateSnapshot = simulationState
 
     for (drone <- drones) {
-      tellWithRSVP(drone, SimStep(currentTime, simulationStateSnapshot))
+      simStepAwaiter.tellWithRSVP(drone, SimStep(currentTime, simulationStateSnapshot))
     }
 
     for (flock <- flocks) {
-      tellWithRSVP(flock, SimStep(currentTime, simulationStateSnapshot))
+      simStepAwaiter.tellWithRSVP(flock, SimStep(currentTime, simulationStateSnapshot))
     }
 
     if (ticksToResolution == 0) {
@@ -217,15 +247,14 @@ class Simulation() extends Actor with Timers with Stash {
       self ! Tick
     }
 
-    awaitResponses()
+    simStepAwaiter.awaitResponses()
 
     log.debug(simulationState.toString)
   }
 
   private def processResolverTick(): Unit = {
-    // TODO - invoke resolver
-    tellWithRSVP(resolver, SimStep(currentTime, simulationState))
-    awaitResponses()
+    resolverAwaiter.awaitResponses()
+    resolverAwaiter.tellWithRSVP(resolver, SimStep(currentTime, simulationState))
   }
 
   private def processStatus(): Unit = {
@@ -238,8 +267,16 @@ class Simulation() extends Actor with Timers with Stash {
     case Reset => processReset()
     case Status => processStatus()
 
-    case Tick => processTick()
-    case ResolverTick => processResolverTick()
+    case Tick =>
+      log.debug(s"Simulation.Tick")
+      processTick()
+    case ResolverTick =>
+      log.debug(s"Simulation.ResolverTick")
+      processResolverTick()
+
+    case msg: Ack =>
+      log.debug(s"Simulation.Ack")
+      stash()
   }
 
 
