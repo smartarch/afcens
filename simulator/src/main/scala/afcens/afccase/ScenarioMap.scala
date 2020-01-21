@@ -44,10 +44,33 @@ case class RestId(idx: Int) extends PositionId {
   override def toString: String = s"Rest-${idx + 1}"
 }
 
+object FieldIdHelper {
+  private def _computeCenterPosition(idx: Int): Position = {
+    var x = 0.0;
+    var y = 0.0;
+    var n = 0;
+
+    for (subIdx <- 0 until ScenarioMap.fieldSizes(idx)) {
+      val pos = FieldId(idx, subIdx).position
+      x += pos.x
+      y += pos.y
+      n += 1
+    }
+
+    Position(x/n, y/n)
+  }
+
+  val _centerPositions = Map.empty[Int, Position] ++ (for (idx <- 0 until ScenarioMap.fieldCount) yield idx -> _computeCenterPosition(idx))
+
+  def centerPosition(idx: Int) = _centerPositions(idx)
+}
+
 case class FieldId(idx: Int, subIdx: Int) extends PositionId {
-  assert(idx >= 0 && idx < ScenarioMap.fieldCount)
-  val fieldSize = ScenarioMap.fieldSizes(idx)
-  assert(subIdx >= 0 && subIdx < fieldSize)
+  {
+    assert(idx >= 0 && idx < ScenarioMap.fieldCount)
+    val fieldSize = ScenarioMap.fieldSizes(idx)
+    assert(subIdx >= 0 && subIdx < fieldSize)
+  }
 
   override def toString: String = s"Field-${idx + 1}-${subIdx + 1}"
 

@@ -9,10 +9,10 @@ import akka.event.Logging
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId])
+case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, ObservedFieldId])
 case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position])
 case class ResolutionResult()
-case class SimulationState(time: String, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], ensembles: ResolutionResult)
+case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], ensembles: ResolutionResult)
 
 
 abstract class RSVPMessage {
@@ -160,7 +160,7 @@ class Simulation() extends Actor with Timers with Stash {
   processReset()
 
   private def simulationState = SimulationState(
-    currentTime.atZone(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME),
+    currentTime,
     state,
     droneStates.toMap,
     flockStates.toMap,
