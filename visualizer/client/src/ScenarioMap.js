@@ -152,6 +152,8 @@ const minorStepsInRefetchPeriod = 5;
             this.reset();
 
         } else {
+            console.log(resp.data.tasks);
+
             const agents = {};
             for (const droneKey in resp.data.drones) {
                 const drone = resp.data.drones[droneKey];

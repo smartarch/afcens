@@ -40,11 +40,12 @@ class Resolver() extends Actor {
       log.error(s"Error. No solution exists. Took ${endTime - startTime} ms to compute.")
     }
 
-    ResolutionResult()
+    println(scenario.emittedTasks.toList)
+    ResolutionResult(scenario.emittedTasks.toList)
   }
 
   private def processReset(): ResolutionResult = {
-    ResolutionResult()
+    ResolutionResult(List())
   }
 
   def receive = {

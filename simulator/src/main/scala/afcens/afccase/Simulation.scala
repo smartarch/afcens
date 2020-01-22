@@ -11,8 +11,8 @@ import scala.concurrent.duration._
 
 case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, ObservedFieldId])
 case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position])
-case class ResolutionResult()
-case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], ensembles: ResolutionResult)
+case class ResolutionResult(tasks: List[Task])
+case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], tasks: ResolutionResult)
 
 
 abstract class RSVPMessage {

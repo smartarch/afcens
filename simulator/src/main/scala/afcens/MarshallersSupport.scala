@@ -5,9 +5,28 @@ import java.time.{LocalDateTime, ZoneOffset}
 
 import afcens.afccase._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import spray.json.{DefaultJsonProtocol, JsNumber, JsString, JsValue, JsonFormat, deserializationError}
+import spray.json.{DefaultJsonProtocol, JsNumber, JsObject, JsString, JsValue, JsonFormat, RootJsonFormat, deserializationError, serializationError}
 
 trait MarshallersSupport extends SprayJsonSupport with DefaultJsonProtocol {
+  implicit object TaskJsonFormat extends RootJsonFormat[Task] {
+    def write(x: Task) = x match {
+      case MoveTask(droneId, targetPosition) => JsObject(
+        "type" -> JsString("move"),
+        "droneId" -> JsString(droneId),
+        "targetPosition" -> positionFormat.write(targetPosition)
+      )
+      case ChargeTask(droneId, chargerId: ChargerId) => JsObject(
+        "type" -> JsString("charge"),
+        "droneId" -> JsString(droneId),
+        "chargerId" -> chargerIdFormat.write(chargerId)
+      )
+      case _ => serializationError("Unsupported subclass")
+    }
+    def read(value: JsValue) = value match {
+      case x => deserializationError("Not implemented")
+    }
+  }
+
   implicit object LocalDateTimeJsonFormat extends JsonFormat[LocalDateTime] {
     def write(x: LocalDateTime) = JsString(x.atZone(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
     def read(value: JsValue) = value match {
@@ -54,6 +73,6 @@ trait MarshallersSupport extends SprayJsonSupport with DefaultJsonProtocol {
   implicit val observedFieldIdFormat = jsonFormat3(ObservedFieldId)
   implicit val droneStateFormat = jsonFormat5(DroneState)
   implicit val flockStateFormat = jsonFormat3(FlockState)
-  implicit val resolutionResultFormat = jsonFormat0(ResolutionResult)
+  implicit val resolutionResultFormat = jsonFormat1(ResolutionResult)
   implicit val simulationStateFormat = jsonFormat5(SimulationState)
 }
