@@ -85,13 +85,11 @@ const minorStepsInRefetchPeriod = 5;
         };
 
         this.droneModeLabels = {
-            0: t('Flying to charger'),
-            1: t('Charging'),
-            2: t('Patrolling'),
-            3: t('Pursuing'),
-            4: t('Resting'),
-            5: t('Dead'),
-            6: t('Idle')
+            0: t('Charging'),
+            1: t('Moving'),
+            2: t('Resting'),
+            3: t('Dead'),
+            4: t('Idle')
         };
 
         this.flockModeLabels = {

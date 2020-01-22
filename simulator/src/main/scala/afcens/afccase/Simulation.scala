@@ -12,7 +12,7 @@ import scala.concurrent.duration._
 case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, ObservedFieldId])
 case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position])
 case class ResolutionResult(tasks: List[Task])
-case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], tasks: ResolutionResult)
+case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], tasks: List[Task])
 
 
 abstract class RSVPMessage {
@@ -164,7 +164,7 @@ class Simulation() extends Actor with Timers with Stash {
     state,
     droneStates.toMap,
     flockStates.toMap,
-    resolutionResult
+    resolutionResult.tasks
   )
 
   private def processReset(): Unit = {
