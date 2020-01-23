@@ -44,12 +44,12 @@ case class RestId(idx: Int) extends PositionId {
   override def toString: String = s"Rest-${idx + 1}"
 }
 
-case class Area(tlx: Double, tly: Double, brx: Double, bry: Double)
+case class Area(left: Double, top: Double, right: Double, bottom: Double) {
+  def contains(pos: Position): Boolean = pos != null && pos.x >= left && pos.y >= top && pos.x <= right && pos.y <= bottom
+}
 
 object FieldIdHelper {
   private def _computeFieldArea(idx: Int): Area = {
-    var tlx, tly, brx, bry = 0.0;
-
     val allPositions = (for (subIdx <- 0 until ScenarioMap.fieldSizes(idx)) yield FieldId(idx, subIdx).position).toList
 
     Area(
@@ -66,16 +66,18 @@ object FieldIdHelper {
 
   def centers(fieldIdx: Int, horizClusterCount: Int) = {
     val fa = _fieldAreas(fieldIdx)
-    val width = (fa.brx - fa.tlx) / horizClusterCount
-    val yc = (fa.bry + fa.tly) / 2
-    val startXc = fa.tlx + width / 2
+    val width = (fa.right - fa.left) / horizClusterCount
+    val yc = (fa.bottom + fa.top) / 2
+    val startXc = fa.left + width / 2
 
     (for (idx <- 0 until horizClusterCount) yield Position(startXc + width * idx, yc))
   }
 
+  def area(fieldIdx: Int) = _fieldAreas(fieldIdx)
+
   def protectingDroneCountRequired(fieldIdx: Int) = {
     val fa = _fieldAreas(fieldIdx)
-    val width = fa.brx - fa.tlx
+    val width = fa.right - fa.left
     Math.ceil(width / (Flock.disturbRadius * 2)).toInt
   }
 }

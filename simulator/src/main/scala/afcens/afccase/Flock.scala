@@ -16,8 +16,8 @@ object FlockMode extends Enumeration {
 object Flock {
   val speed = 1 // pos unit / tick
   val visibilityRadius = 50
-  val disturbRadius = 15
-  val observationTimeout = Duration.ofSeconds(300)
+  val disturbRadius = 18
+  val observationTimeout = Duration.ofSeconds(150)
   val leaveFreeProb = 0.01
   val leaveFieldProb = 0.002
   val chooseFieldProb = 0.8
@@ -55,9 +55,11 @@ class Flock() extends Actor {
   private var targetPos: Position = _
   private var targetPosId: PositionId = _
 
+  private var eatTicks = 0
+
   private var observedDrones: List[ObservedDrone] = _
 
-  private def flockState = FlockState(mode, currentPos, observedDrones.map(_.position))
+  private def flockState = FlockState(mode, currentPos, observedDrones.map(_.position), eatTicks)
 
   private def processReset(): FlockState = {
     mode = IDLE
@@ -65,6 +67,7 @@ class Flock() extends Actor {
     targetPos = currentPos
     targetPosId = startPosId
     observedDrones = List.empty[ObservedDrone]
+    eatTicks = 0
 
     flockState
   }
@@ -99,6 +102,10 @@ class Flock() extends Actor {
           mode = FLYING_TO_REST
         }
       }
+    }
+
+    if (mode == EATING) {
+      eatTicks += 1
     }
 
     while (droneCloseBy(targetPos)) {

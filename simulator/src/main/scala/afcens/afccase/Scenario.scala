@@ -19,6 +19,10 @@ trait WithAFCEnsTasks {
     comp.selectedMembers.head
   }
 
+  def moveTask(drone: DroneComponent, targetPosition: Position): Unit = {
+    emittedTasks += MoveTask(drone.id, targetPosition)
+  }
+
   def moveTask(drone: MemberGroup[DroneComponent], targetPosition: Position): Unit = {
     emittedTasks += MoveTask(selectOne(drone).id, targetPosition)
   }
@@ -47,33 +51,35 @@ case class DroneComponent(
 case class FieldComponent(idx: Int, fieldObservations: List[FieldObservation]) extends Component {
   name(s"Field ${idx}")
 
-  val aggregatedFieldObservations = mutable.HashMap.empty[Int, FieldObservation]
+  val aggregatedObservations = mutable.HashMap.empty[Int, FieldObservation]
 
   for (obs <- fieldObservations) {
     val key = obs.fieldId.subIdx
-    if (!aggregatedFieldObservations.contains(key)) {
-      aggregatedFieldObservations(key) = obs
+    if (!aggregatedObservations.contains(key)) {
+      aggregatedObservations(key) = obs
 
     } else {
-      val existingField = aggregatedFieldObservations(key)
+      val existing = aggregatedObservations(key)
 
-      if (existingField.status == UNKNOWN ||
-        (existingField.time.isBefore(obs.time) && obs.status != UNKNOWN) ||
-        (existingField.time.isEqual(obs.time) && obs.status == UNDER_THREAT)
+      if (existing.status == UNKNOWN ||
+        (existing.time.isBefore(obs.time) && obs.status != UNKNOWN) ||
+        (existing.time.isEqual(obs.time) && obs.status == UNDER_THREAT)
       ) {
-        aggregatedFieldObservations(key) = obs
+        aggregatedObservations(key) = obs
       }
     }
   }
 
-  val isUnderThreat = aggregatedFieldObservations.values.exists(_.status == UNDER_THREAT)
+  val isUnderThreat = aggregatedObservations.values.exists(_.status == UNDER_THREAT)
 
-  val isUnknown = aggregatedFieldObservations.values.exists(_.status == UNKNOWN)
+  val isUnknown = aggregatedObservations.values.exists(_.status == UNKNOWN)
 
   val center = FieldIdHelper.center(idx)
 
   val requiredDroneCountForProtection = FieldIdHelper.protectingDroneCountRequired(idx)
   val protectionCenters = FieldIdHelper.centers(idx, requiredDroneCountForProtection)
+
+  val area = FieldIdHelper.area(idx)
 }
 
 case class ChargerComponent(idx: Int, isFree: Boolean) extends Component {
@@ -83,13 +89,18 @@ case class ChargerComponent(idx: Int, isFree: Boolean) extends Component {
   val position = chargerId.position
 }
 
+case class FlockComponent(position: Position) extends Component {
+  name(s"Flock @ ${position}")
+}
+
 
 class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
-  def dist2Utility(pos1: Position, pos2: Position) = (50 - pos1.distance(pos2) / 6).round.toInt
+  def dist2Utility(pos1: Position, pos2: Position) = (10 - pos1.distance(pos2) / 30).round.toInt
 
   val allDrones = for ((id, st) <- simulationState.drones) yield DroneComponent(id, st.mode, st.position, st.energy, st.chargingInChargerId, st.observedFieldIds)
   val allFields = for (idx <- 0 until ScenarioMap.fieldCount) yield FieldComponent(idx, allDrones.flatMap(_.observedFields.values.filter(_.fieldId.idx == idx)).toList)
   val allChargers = for (idx <- 0 until ScenarioMap.chargerCount) yield ChargerComponent(idx, allDrones.forall(_.chargingInChargerId != Some(ChargerId(idx))))
+  val allFlocks = simulationState.flocks.values.map(x => FlockComponent(x.position))
 
 
   class DroneProtectionSystem extends Ensemble {
@@ -104,13 +115,84 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
     val freeChargers = allChargers.filter(_.isFree)
 
 
-    class ProtectionAssignment(field: FieldComponent) extends Ensemble {
-      name(s"ProtectionAssignment for field ${field.idx}")
+    object ApproachFieldUnderThreat {
+      def isInSituation(field: FieldComponent) = {
+        val dronesInField = operationalDrones.filter(x => field.area.contains(x.position))
+        val droneCount = field.requiredDroneCountForProtection
+
+        dronesInField.size < droneCount
+      }
+    }
+
+    class ApproachFieldUnderThreat(field: FieldComponent) extends Ensemble {
+      name(s"ApproachFieldUnderThreat ensemble for field ${field.idx}")
+
+      val flocksInField = allFlocks.filter(x => field.area.contains(x.position))
+      val dronesInField = operationalDrones.filter(x => field.area.contains(x.position))
+
+      val droneCount = field.requiredDroneCountForProtection
+      val center = field.center
+
+      /*
+      situation {
+        dronesInField.size < droneCount
+      }
+       */
+
+      val drones = subsetOfComponents(operationalDrones, _ <= droneCount)
+
+      utility {
+        drones.sum(x => if (field.area.contains(x.position)) 10 else dist2Utility(x.position, center))
+      }
+
+      tasks {
+        if (flocksInField.isEmpty) {
+          for (drone <- drones.selectedMembers) moveTask(drone, center)
+        } else {
+          val selectedDronesInFieldCount = drones.selectedMembers.count(x => field.area.contains(x.position))
+
+          val flockPos = flocksInField.head.position
+
+          val step = Flock.disturbRadius * 2
+          var x = flockPos.x - (selectedDronesInFieldCount - 1) * Flock.disturbRadius
+
+          for (drone <- drones.selectedMembers) {
+            if (field.area.contains(drone.position)) {
+              moveTask(drone, Position(x, flockPos.y))
+              x += step
+            } else {
+              moveTask(drone, center)
+            }
+          }
+        }
+      }
+    }
+
+
+    object ScareFormation {
+      def isInSituation(field: FieldComponent) = {
+        val dronesInField = operationalDrones.filter(x => field.area.contains(x.position))
+        val droneCount = field.requiredDroneCountForProtection
+
+        dronesInField.size >= droneCount
+      }
+    }
+
+    class ScareFormation(field: FieldComponent) extends Ensemble {
+      name(s"ScareFormation ensemble for field ${field.idx}")
+
+      val dronesInField = operationalDrones.filter(x => field.area.contains(x.position))
 
       val droneCount = field.requiredDroneCountForProtection
       val segmentCenters = field.protectionCenters
 
-      class SegmentProtectionAssignment(segmentCenter: Position) extends Ensemble {
+      /*
+      situation {
+        dronesInField.size >= droneCount
+      }
+       */
+
+      class SegmentAssignment(segmentCenter: Position) extends Ensemble {
         name(s"SegmentProtectionAssignment for field ${field.idx} @ ${segmentCenter.x},${segmentCenter.y}")
         val drone = oneOf(operationalDrones)
 
@@ -123,9 +205,9 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
         }
       }
 
-      val protectionSegmentAssignments = rules(segmentCenters.map(new SegmentProtectionAssignment(_)))
+      val protectionSegmentAssignments = rules(segmentCenters.map(new SegmentAssignment(_)))
 
-      val protectingDrones = unionOf(protectionSegmentAssignments.map(_.drone))
+      val drones = unionOf(protectionSegmentAssignments.map(_.drone))
 
       utility {
         protectionSegmentAssignments.sum(assignment => assignment.utility) / droneCount
@@ -137,8 +219,8 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
     }
 
 
-    class PatrolAssignment(field: FieldComponent) extends Ensemble {
-      name(s"PatrolAssignment for field ${field.idx}")
+    class PatrolUnknown(field: FieldComponent) extends Ensemble {
+      name(s"PatrolUnknown ensemble for field ${field.idx}")
 
       val drone = oneOf(operationalDrones)
       val fieldCenter = field.center
@@ -170,18 +252,20 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
     }
 
 
-    val patrolAssignments = ensembles(fieldsWithUnknownStatus.map(new PatrolAssignment(_)))
+    val patrolUnknown = ensembles(fieldsWithUnknownStatus.map(new PatrolUnknown(_)))
     val chargerAssignments = ensembles(freeChargers.map(new ChargerAssignment(_)))
-    val protectionAssignments = ensembles(fieldsUnderThreat.map(new ProtectionAssignment(_)))
+    val approachFieldsUnderThreat = ensembles(fieldsUnderThreat.filter(ApproachFieldUnderThreat.isInSituation(_)).map(new ApproachFieldUnderThreat(_)))
+    val scareFormations = ensembles(fieldsUnderThreat.filter(ScareFormation.isInSituation(_)).map(new ScareFormation(_)))
 
     utility {
-      protectionAssignments.sum(assignment => assignment.utility) +
-      patrolAssignments.sum(assignment => assignment.utility) / 3 + // The division by 3 expresses the relatively lower importance to the protection
+      approachFieldsUnderThreat.sum(assignment => assignment.utility) +
+      scareFormations.sum(assignment => assignment.utility) +
+      patrolUnknown.sum(assignment => assignment.utility) / 4 + // The division by 4 expresses the relatively lower importance to the protection
       chargerAssignments.sum(assignment => assignment.utility)
     }
 
     constraint(
-      (patrolAssignments.map(_.drone) ++ protectionAssignments.map(_.protectingDrones)).allDisjoint &&
+      (patrolUnknown.map(_.drone) ++ approachFieldsUnderThreat.map(_.drones) ++ scareFormations.map(_.drones)).allDisjoint &&
       chargerAssignments.map(_.drone).allDisjoint
     )
   }

@@ -17,12 +17,12 @@ object Drone {
   val speed = 1 // pos unit / tick
   val visibilityRadius = 50
   val observationTimeout = Duration.ofSeconds(500)
-  val chargingThreshold = 0.2
-  val flockAtFieldDistanceThreshold = 1
+  val chargingThreshold = 0.25
+  val flockAtFieldDistanceThreshold = 10
 
   val energyDrainMovingPerTick = 0.0015
   val energyDrainStayingPerTick = 0.001
-  val energyChargePerTick = 0.01
+  val energyChargePerTick = 0.015
 
   def props(withEnsembles: Boolean) = Props(new Drone(withEnsembles))
 }

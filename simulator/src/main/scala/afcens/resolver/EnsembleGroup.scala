@@ -58,7 +58,7 @@ class EnsembleGroup[+EnsembleType <: Ensemble](
           // enforce activation when situation predicate is true
           _solverModel.postEnforceSelected(
             allMembers.map(_._isInSituation && LogicalBoolVar(isActiveVar)),
-            allMembersVar,
+            allMembersVar
           )
         }
 

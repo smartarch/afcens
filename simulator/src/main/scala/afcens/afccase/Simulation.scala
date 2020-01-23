@@ -10,9 +10,9 @@ import scala.collection.mutable
 import scala.concurrent.duration._
 
 case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, FieldObservation])
-case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position])
+case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position], eatTicks: Int)
 case class ResolutionResult(tasks: List[Task])
-case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], tasks: List[Task])
+case class SimulationState(time: LocalDateTime, eatTicks: Int, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], tasks: List[Task])
 
 
 abstract class RSVPMessage {
@@ -154,15 +154,19 @@ class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stas
   flocks += context.actorOf(Flock.props(), "Flock-1")
   flocks += context.actorOf(Flock.props(), "Flock-2")
   flocks += context.actorOf(Flock.props(), "Flock-3")
+  flocks += context.actorOf(Flock.props(), "Flock-4")
+  flocks += context.actorOf(Flock.props(), "Flock-5")
 
   drones += context.actorOf(Drone.props(withEnsembles), "Drone-1")
   drones += context.actorOf(Drone.props(withEnsembles), "Drone-2")
   drones += context.actorOf(Drone.props(withEnsembles), "Drone-3")
+  drones += context.actorOf(Drone.props(withEnsembles), "Drone-4")
 
   processReset()
 
   private def simulationState = SimulationState(
     currentTime,
+    flockStates.values.map(_.eatTicks).sum,
     state,
     droneStates.toMap,
     flockStates.toMap,
@@ -256,8 +260,8 @@ class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stas
 
   private def processResolverTick(): Unit = {
     if (withEnsembles) {
-      resolverAwaiter.awaitResponses()
       resolverAwaiter.tellWithRSVP(resolver, SimStep(currentTime, simulationState))
+      resolverAwaiter.awaitResponses()
     }
   }
 

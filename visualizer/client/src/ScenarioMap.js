@@ -170,12 +170,14 @@ const minorStepsInRefetchPeriod = 5;
                     type: AgentType.FLOCK,
                     position: flock.position,
                     mode: flock.mode,
-                    observedDrones: flock.observedDrones
+                    observedDrones: flock.observedDrones,
+                    eatTicks: flock.eatTicks
                 };
             }
 
             kf.push({
                 ts,
+                eatTicks: resp.data.eatTicks,
                 agents,
                 ensembles: resp.data.ensembles
             });
@@ -242,6 +244,7 @@ const minorStepsInRefetchPeriod = 5;
                                 frame.symbol = 'Bird';
                                 frame.mode = lastAgent.mode;
                                 frame.observedDrones = lastAgent.observedDrones;
+                                frame.eatTicks = interp(lastAgent.eatTicks, nextAgent.eatTicks)
                             }
 
                             agents.push(frame);
@@ -251,6 +254,7 @@ const minorStepsInRefetchPeriod = 5;
 
                     this.setState({
                         ts,
+                        eatTicks: interp(last.eatTicks, next.eatTicks),
                         agents,
                         ensembles: last.ensembles
                     });
@@ -283,6 +287,7 @@ const minorStepsInRefetchPeriod = 5;
     render() {
         const t = this.props.t;
         const energyF = d3Format.format(".0f");
+        const eatTicksF = d3Format.format(".1f");
 
         const playState = this.state.playState;
 
@@ -323,6 +328,7 @@ const minorStepsInRefetchPeriod = 5;
                             <div className={`card-title ${styles.detailsSectionHeader}`}>{t('Flock status')}</div>
                             <div className="card-text">
                                 <div>{t('Mode')}: {this.flockModeLabels[selAgent.mode]}</div>
+                                <div>{t('Eat ticks')}: {eatTicksF(selAgent.eatTicks)}</div>
                             </div>
                         </div>
                     )
@@ -368,6 +374,7 @@ const minorStepsInRefetchPeriod = 5;
                                 }
                                 <Button className={`btn-danger ${styles.controlButton}`} icon="stop" onClickAsync={::this.stop} disabled={playState === State.START}/>
                                 <span className={styles.timestamp}>{tsFormatted}</span>
+                                <span className={styles.eatTicks}>Total eaten: {eatTicksF(this.state.eatTicks)}</span>
                             </div>
                             <div className="col-12 col-lg-3 mb-3 text-lg-right">
                                 <Button className={`btn-info ${styles.controlButton}`} icon="bullseye" onClickAsync={async () => this.setState({visibilityRadiusVisible: !this.state.visibilityRadiusVisible})} />

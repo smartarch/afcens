@@ -17,10 +17,10 @@ import scala.collection.mutable
 class SolverModel extends ChocoModel {
 
   /** Upper bound for integer variables of the solver */
-  private[resolver] val IntMaxValue = 10000 // IntVar.MAX_INT_BOUND
+  private[resolver] val IntMaxValue = 100 // IntVar.MAX_INT_BOUND
 
   /** Lower bound for integer variables of the solver */
-  private[resolver] val IntMinValue = -10000 // IntVar.MIN_INT_BOUND
+  private[resolver] val IntMinValue = 0 // IntVar.MIN_INT_BOUND
 
   /** Create a new `IntVar` with bounded range.
     *
