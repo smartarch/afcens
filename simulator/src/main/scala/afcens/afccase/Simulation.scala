@@ -9,7 +9,7 @@ import akka.event.Logging
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, ObservedFieldId])
+case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, FieldObservation])
 case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position])
 case class ResolutionResult(tasks: List[Task])
 case class SimulationState(time: LocalDateTime, playState: Simulation.State.State, drones: Map[String, DroneState], flocks: Map[String, FlockState], tasks: List[Task])
@@ -25,7 +25,7 @@ final case class FlockAck(origUUID: String, state: FlockState) extends Ack
 final case class ResolverAck(origUUID: String, result: ResolutionResult) extends Ack
 
 object Simulation {
-  def props() = Props(new Simulation())
+  def props(withEnsembles: Boolean) = Props(new Simulation(withEnsembles))
 
   final case class Play(tickIntervalMs: Int)
   case object Pause
@@ -50,7 +50,7 @@ object Simulation {
   }
 }
 
-class Simulation() extends Actor with Timers with Stash {
+class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stash {
   simulation =>
 
   import Simulation.State._
@@ -90,6 +90,8 @@ class Simulation() extends Actor with Timers with Stash {
     }
 
     def receive: Receive = {
+      case Status => processStatus()
+
       case Tick =>
         log.debug(s"Awaiter[${name}].Tick")
         log.warning("Dropping one tick")
@@ -153,9 +155,9 @@ class Simulation() extends Actor with Timers with Stash {
   flocks += context.actorOf(Flock.props(), "Flock-2")
   flocks += context.actorOf(Flock.props(), "Flock-3")
 
-  drones += context.actorOf(Drone.props(), "Drone-1")
-  drones += context.actorOf(Drone.props(), "Drone-2")
-  drones += context.actorOf(Drone.props(), "Drone-3")
+  drones += context.actorOf(Drone.props(withEnsembles), "Drone-1")
+  drones += context.actorOf(Drone.props(withEnsembles), "Drone-2")
+  drones += context.actorOf(Drone.props(withEnsembles), "Drone-3")
 
   processReset()
 
@@ -253,8 +255,10 @@ class Simulation() extends Actor with Timers with Stash {
   }
 
   private def processResolverTick(): Unit = {
-    resolverAwaiter.awaitResponses()
-    resolverAwaiter.tellWithRSVP(resolver, SimStep(currentTime, simulationState))
+    if (withEnsembles) {
+      resolverAwaiter.awaitResponses()
+      resolverAwaiter.tellWithRSVP(resolver, SimStep(currentTime, simulationState))
+    }
   }
 
   private def processStatus(): Unit = {

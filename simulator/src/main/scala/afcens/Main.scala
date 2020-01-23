@@ -21,9 +21,9 @@ object Main extends MarshallersSupport {
 
     implicit val timeout = Timeout(1 second)
 
-    val simulation = system.actorOf(Simulation.props())
+    val simulation = system.actorOf(Simulation.props(true))
 
-    // simulation ! Simulation.Play(100)
+    simulation ! Simulation.Play(100)
 
     val route =
       path("play") {

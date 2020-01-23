@@ -44,25 +44,40 @@ case class RestId(idx: Int) extends PositionId {
   override def toString: String = s"Rest-${idx + 1}"
 }
 
+case class Area(tlx: Double, tly: Double, brx: Double, bry: Double)
+
 object FieldIdHelper {
-  private def _computeCenterPosition(idx: Int): Position = {
-    var x = 0.0;
-    var y = 0.0;
-    var n = 0;
+  private def _computeFieldArea(idx: Int): Area = {
+    var tlx, tly, brx, bry = 0.0;
 
-    for (subIdx <- 0 until ScenarioMap.fieldSizes(idx)) {
-      val pos = FieldId(idx, subIdx).position
-      x += pos.x
-      y += pos.y
-      n += 1
-    }
+    val allPositions = (for (subIdx <- 0 until ScenarioMap.fieldSizes(idx)) yield FieldId(idx, subIdx).position).toList
 
-    Position(x/n, y/n)
+    Area(
+      allPositions.map(_.x).reduce((a, b) => Math.min(a, b)),
+      allPositions.map(_.y).reduce((a, b) => Math.min(a, b)),
+      allPositions.map(_.x).reduce((a, b) => Math.max(a, b)),
+      allPositions.map(_.y).reduce((a, b) => Math.max(a, b))
+    )
   }
 
-  val _centerPositions = Map.empty[Int, Position] ++ (for (idx <- 0 until ScenarioMap.fieldCount) yield idx -> _computeCenterPosition(idx))
+  val _fieldAreas = Map.empty[Int, Area] ++ (for (idx <- 0 until ScenarioMap.fieldCount) yield idx -> _computeFieldArea(idx))
 
-  def centerPosition(idx: Int) = _centerPositions(idx)
+  def center(fieldIdx: Int) = centers(fieldIdx, 1).head
+
+  def centers(fieldIdx: Int, horizClusterCount: Int) = {
+    val fa = _fieldAreas(fieldIdx)
+    val width = (fa.brx - fa.tlx) / horizClusterCount
+    val yc = (fa.bry + fa.tly) / 2
+    val startXc = fa.tlx + width / 2
+
+    (for (idx <- 0 until horizClusterCount) yield Position(startXc + width * idx, yc))
+  }
+
+  def protectingDroneCountRequired(fieldIdx: Int) = {
+    val fa = _fieldAreas(fieldIdx)
+    val width = fa.brx - fa.tlx
+    Math.ceil(width / (Flock.disturbRadius * 2)).toInt
+  }
 }
 
 case class FieldId(idx: Int, subIdx: Int) extends PositionId {

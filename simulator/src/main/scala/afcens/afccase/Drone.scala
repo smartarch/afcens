@@ -24,7 +24,7 @@ object Drone {
   val energyDrainStayingPerTick = 0.001
   val energyChargePerTick = 0.01
 
-  def props() = Props(new Drone())
+  def props(withEnsembles: Boolean) = Props(new Drone(withEnsembles))
 }
 
 object ObservedFieldStatus extends Enumeration {
@@ -33,7 +33,7 @@ object ObservedFieldStatus extends Enumeration {
 }
 
 import afcens.afccase.ObservedFieldStatus.ObservedFieldStatus
-case class ObservedFieldId(time: LocalDateTime, fieldId: FieldId, status: ObservedFieldStatus)
+case class FieldObservation(time: LocalDateTime, fieldId: FieldId, status: ObservedFieldStatus)
 
 /*
 Basic behavior:
@@ -45,7 +45,7 @@ Basic behavior:
   - If no birds are observed, it patrols over the fields in 1..5 order
  */
 
-class Drone() extends Actor {
+class Drone(val withEnsembles: Boolean) extends Actor {
   val id = self.path.name
 
   private val log = Logging(context.system, this)
@@ -65,7 +65,7 @@ class Drone() extends Actor {
   private var energy: Double = _
   private var chargingInChargerId: Option[ChargerId] = None
 
-  private var observedFieldIds: Map[String, ObservedFieldId] = _
+  private var observedFieldIds: Map[String, FieldObservation] = _
 
   private def droneState = DroneState(mode, currentPos, energy, chargingInChargerId, observedFieldIds)
 
@@ -76,10 +76,70 @@ class Drone() extends Actor {
     targetChargerId = null
     chargingInChargerId = None
     energy = 1
-    observedFieldIds = Map.empty[String, ObservedFieldId]
+    observedFieldIds = Map.empty[String, FieldObservation]
 
     droneState
   }
+
+  def performObserving(currentTime: LocalDateTime, simulationState: SimulationState): Unit = {
+    val observedFlockPositions =
+      if (mode != DEAD && mode != RESTING && mode != CHARGING)
+        for (flock <- simulationState.flocks.values if flock.position.distance(currentPos) < Drone.visibilityRadius) yield flock.position
+      else
+        List()
+
+    for (fieldId <- ScenarioMap.allFieldIds) {
+      val existingObservation = observedFieldIds.get(fieldId.toString)
+
+      val status =
+        if (fieldId.position.distance(currentPos) >= Drone.visibilityRadius) ObservedFieldStatus.UNKNOWN
+        else if (observedFlockPositions.exists(flockPos => fieldId.position.distance(flockPos) <= Drone.flockAtFieldDistanceThreshold)) ObservedFieldStatus.UNDER_THREAT
+        else ObservedFieldStatus.CLEAR
+
+      if (
+        status != ObservedFieldStatus.UNKNOWN ||
+          existingObservation == None ||
+          existingObservation.get.time.isBefore(currentTime.minus(Flock.observationTimeout)) ||
+          existingObservation.get.status == ObservedFieldStatus.UNKNOWN
+      ) {
+
+        observedFieldIds = observedFieldIds + (fieldId.toString -> FieldObservation(currentTime, fieldId, status))
+      }
+    }
+  }
+
+  def performCharging(): Unit = {
+    mode = CHARGING
+
+    energy += Drone.energyChargePerTick
+    if (energy >= 1) {
+      energy = 1
+      mode = IDLE
+      chargingInChargerId = None
+    }
+  }
+
+  def performMove(): Unit = {
+    if (mode != CHARGING || mode != RESTING) {
+      val dx = targetPos.x - currentPos.x
+      val dy = targetPos.y - currentPos.y
+      val dl = Math.sqrt(dx * dx + dy * dy)
+
+      if (dl >= Drone.speed * rndFactor) {
+        energy -= Drone.energyDrainMovingPerTick * rndFactor
+        currentPos = Position(currentPos.x + dx * Drone.speed * rndFactor / dl, currentPos.y + dy * Drone.speed * rndFactor / dl)
+      } else {
+        energy -= Drone.energyDrainStayingPerTick * rndFactor
+        currentPos = targetPos
+      }
+
+      if (energy <= 0) {
+        energy = 0
+        mode = DEAD
+      }
+    }
+  }
+
 
   private def processStandaloneStep(currentTime: LocalDateTime, simulationState: SimulationState): DroneState = {
     val chargerAvailability = Map.empty[ChargerId, Option[Boolean]] ++ (
@@ -92,189 +152,86 @@ class Drone() extends Actor {
         )
     )
 
-    def performObserving(): Unit = {
-      val observedFlockPositions =
-        if (mode != DEAD && mode != RESTING && mode != CHARGING)
-            for (flock <- simulationState.flocks.values if flock.position.distance(currentPos) < Drone.visibilityRadius) yield flock.position
-        else
-          List()
-
-      for (fieldId <- ScenarioMap.allFieldIds) {
-        val existingObservation = observedFieldIds.get(fieldId.toString)
-
-        val status =
-          if (fieldId.position.distance(currentPos) >= Drone.visibilityRadius) ObservedFieldStatus.UNKNOWN
-          else if (observedFlockPositions.exists(flockPos => fieldId.position.distance(flockPos) <= Drone.flockAtFieldDistanceThreshold)) ObservedFieldStatus.UNDER_THREAT
-          else ObservedFieldStatus.CLEAR
-
-        if (
-          status != ObservedFieldStatus.UNKNOWN ||
-            existingObservation == None ||
-            existingObservation.get.time.isBefore(currentTime.minus(Flock.observationTimeout)) ||
-            existingObservation.get.status == ObservedFieldStatus.UNKNOWN
-          ) {
-
-          observedFieldIds = observedFieldIds + (fieldId.toString -> ObservedFieldId(currentTime, fieldId, status))
-        }
-      }
-    }
-
-    def performCharging(): Unit = {
-      mode = CHARGING
-
-      energy += Drone.energyChargePerTick
-      if (energy >= 1) {
-        energy = 1
-        mode = IDLE
-        chargingInChargerId = None
-      }
-    }
-
-    def performGoingToCharge(): Unit = {
-      mode = MOVING
-
-      val availableChargers = for {
-        (chargerId, availability) <- chargerAvailability if availability == Some(true)
-      } yield chargerId
-
-      if (currentPos == targetPos && availableChargers.exists(_ == targetChargerId)) {
-        chargingInChargerId = Some(targetChargerId)
-        targetChargerId = null
-        performCharging()
-
-      } else {
-        if (availableChargers.isEmpty) {
-          if (currentPos == targetPos && targetChargerId.isInstanceOf[ChargerId]) {
-            val nextChargerIdx = (targetChargerId.idx + 1) % ScenarioMap.chargerCount
-            targetChargerId = ChargerId(nextChargerIdx)
-
-          } else {
-            targetChargerId = ScenarioMap.allChargerIds(0)
-          }
-        } else {
-          targetChargerId = PositionId.getClosestTo(currentPos, availableChargers)
-        }
-
-        targetPos = targetChargerId.position
-      }
-    }
-
-    def performPatrollingOrPursuing(): Unit = {
-      mode = MOVING
-
-      if (observedFieldIds.values.forall(_.status != ObservedFieldStatus.UNDER_THREAT)) {
-        val fieldCentersWithUnknownStatus = for {
-          fieldIdx <- 0 until ScenarioMap.fieldCount
-          if observedFieldIds.values.exists(x => x.fieldId.idx == fieldIdx && x.status == ObservedFieldStatus.UNKNOWN)
-        } yield FieldIdHelper.centerPosition(fieldIdx)
-
-        if (fieldCentersWithUnknownStatus.isEmpty) {
-          targetPos = currentPos
-          mode = IDLE
-        } else {
-          var closestPosition: Position = null
-          var closestDistance: Double = 0
-
-          for (position <- fieldCentersWithUnknownStatus) {
-            val distance = position.distance(currentPos)
-            if (closestPosition == null || distance < closestDistance) {
-              closestPosition = position
-              closestDistance = distance
-            }
-          }
-
-          targetPos = closestPosition
-        }
-
-
-      } else {
-        val posId = PositionId.getClosestTo(currentPos, observedFieldIds.values.collect{ case field if field.status == ObservedFieldStatus.UNDER_THREAT => field.fieldId })
-        targetPos = posId.position
-      }
-    }
-
-    performObserving()
+    performObserving(currentTime, simulationState)
 
     if (mode != DEAD) {
       if (mode == IDLE || mode == MOVING) {
+        mode = MOVING
+
         if (energy < Drone.chargingThreshold) {
-          performGoingToCharge()
+          val availableChargers = for {
+            (chargerId, availability) <- chargerAvailability if availability == Some(true)
+          } yield chargerId
+
+          if (currentPos == targetPos && availableChargers.exists(_ == targetChargerId)) {
+            chargingInChargerId = Some(targetChargerId)
+            targetChargerId = null
+            performCharging()
+
+          } else {
+            if (availableChargers.isEmpty) {
+              if (currentPos == targetPos && targetChargerId.isInstanceOf[ChargerId]) {
+                val nextChargerIdx = (targetChargerId.idx + 1) % ScenarioMap.chargerCount
+                targetChargerId = ChargerId(nextChargerIdx)
+
+              } else {
+                targetChargerId = ScenarioMap.allChargerIds(0)
+              }
+            } else {
+              targetChargerId = PositionId.getClosestTo(currentPos, availableChargers)
+            }
+
+            targetPos = targetChargerId.position
+          }
+
         } else {
-          performPatrollingOrPursuing()
+          if (observedFieldIds.values.forall(_.status != ObservedFieldStatus.UNDER_THREAT)) {
+            val fieldCentersWithUnknownStatus = for {
+              fieldIdx <- 0 until ScenarioMap.fieldCount
+              if observedFieldIds.values.exists(x => x.fieldId.idx == fieldIdx && x.status == ObservedFieldStatus.UNKNOWN)
+            } yield FieldIdHelper.center(fieldIdx)
+
+            if (fieldCentersWithUnknownStatus.isEmpty) {
+              targetPos = currentPos
+              mode = IDLE
+            } else {
+
+              var closestPosition: Position = null
+              var closestDistance: Double = 0
+
+              for (position <- fieldCentersWithUnknownStatus) {
+                val distance = position.distance(currentPos)
+                if (closestPosition == null || distance < closestDistance) {
+                  closestPosition = position
+                  closestDistance = distance
+                }
+              }
+
+              targetPos = closestPosition
+            }
+
+          } else {
+            val posId = PositionId.getClosestTo(currentPos, observedFieldIds.values.collect{ case field if field.status == ObservedFieldStatus.UNDER_THREAT => field.fieldId })
+            targetPos = posId.position
+          }
         }
 
       } else if (mode == CHARGING) {
         performCharging()
       }
 
-
-      if (mode != CHARGING || mode != RESTING) {
-        val dx = targetPos.x - currentPos.x
-        val dy = targetPos.y - currentPos.y
-        val dl = Math.sqrt(dx * dx + dy * dy)
-
-        if (dl >= Drone.speed * rndFactor) {
-          energy -= Drone.energyDrainMovingPerTick * rndFactor
-          currentPos = Position(currentPos.x + dx * Drone.speed * rndFactor / dl, currentPos.y + dy * Drone.speed * rndFactor / dl)
-        } else {
-          energy -= Drone.energyDrainStayingPerTick * rndFactor
-          currentPos = targetPos
-        }
-
-        if (energy <= 0) {
-          energy = 0
-          mode = DEAD
-        }
-      }
+      performMove()
     }
 
     droneState
   }
 
+
   private def processCoordinatedStep(currentTime: LocalDateTime, simulationState: SimulationState): DroneState = {
     val chargerIdOption = simulationState.tasks.collectFirst{ case ChargeTask(`id`, chargerId) => chargerId}
     val movePositionOption = simulationState.tasks.collectFirst{ case MoveTask(`id`, position: Position) => position}
 
-    def performObserving(): Unit = {
-      val observedFlockPositions =
-        if (mode != DEAD && mode != RESTING && mode != CHARGING)
-          for (flock <- simulationState.flocks.values if flock.position.distance(currentPos) < Drone.visibilityRadius) yield flock.position
-        else
-          List()
-
-      for (fieldId <- ScenarioMap.allFieldIds) {
-        val existingObservation = observedFieldIds.get(fieldId.toString)
-
-        val status =
-          if (fieldId.position.distance(currentPos) >= Drone.visibilityRadius) ObservedFieldStatus.UNKNOWN
-          else if (observedFlockPositions.exists(flockPos => fieldId.position.distance(flockPos) <= Drone.flockAtFieldDistanceThreshold)) ObservedFieldStatus.UNDER_THREAT
-          else ObservedFieldStatus.CLEAR
-
-        if (
-          status != ObservedFieldStatus.UNKNOWN ||
-            existingObservation == None ||
-            existingObservation.get.time.isBefore(currentTime.minus(Flock.observationTimeout)) ||
-            existingObservation.get.status == ObservedFieldStatus.UNKNOWN
-        ) {
-
-          observedFieldIds = observedFieldIds + (fieldId.toString -> ObservedFieldId(currentTime, fieldId, status))
-        }
-      }
-    }
-
-    def performCharging(): Unit = {
-      mode = CHARGING
-
-      energy += Drone.energyChargePerTick
-      if (energy >= 1) {
-        energy = 1
-        mode = IDLE
-        chargingInChargerId = None
-      }
-    }
-
-
-    performObserving()
+    performObserving(currentTime, simulationState)
 
     if (mode != DEAD) {
       if (chargerIdOption != None) {
@@ -305,33 +262,20 @@ class Drone() extends Actor {
         mode = IDLE
       }
 
-      if (mode != CHARGING || mode != RESTING) {
-        val dx = targetPos.x - currentPos.x
-        val dy = targetPos.y - currentPos.y
-        val dl = Math.sqrt(dx * dx + dy * dy)
-
-        if (dl >= Drone.speed * rndFactor) {
-          energy -= Drone.energyDrainMovingPerTick * rndFactor
-          currentPos = Position(currentPos.x + dx * Drone.speed * rndFactor / dl, currentPos.y + dy * Drone.speed * rndFactor / dl)
-        } else {
-          energy -= Drone.energyDrainStayingPerTick * rndFactor
-          currentPos = targetPos
-        }
-
-        if (energy <= 0) {
-          energy = 0
-          mode = DEAD
-        }
-      }
+      performMove()
     }
 
     droneState
   }
 
+
   def receive = {
     case msg @ SimStep(currentTime, simulationState) =>
-      //sender() ! DroneAck(msg.uuid, processStandaloneStep(currentTime, simulationState))
-      sender() ! DroneAck(msg.uuid, processCoordinatedStep(currentTime, simulationState))
+      if (!withEnsembles) {
+        sender() ! DroneAck(msg.uuid, processStandaloneStep(currentTime, simulationState))
+      } else {
+        sender() ! DroneAck(msg.uuid, processCoordinatedStep(currentTime, simulationState))
+      }
 
     case msg @ SimReset() =>
       sender() ! DroneAck(msg.uuid, processReset())

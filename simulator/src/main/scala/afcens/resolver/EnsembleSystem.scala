@@ -95,7 +95,6 @@ class EnsembleSystem[EnsembleType <: Ensemble](builder: () => EnsembleType) {
     */
   def commit(): Unit = {
     val _actions = _solution._collectActions()
-    println(_actions)
     _actions.foreach(action => action())
   }
 
