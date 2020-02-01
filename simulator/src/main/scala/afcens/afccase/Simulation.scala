@@ -1,13 +1,13 @@
 package afcens.afccase
 
-import java.time.format.DateTimeFormatter
-import java.time.{Duration, LocalDateTime, ZoneOffset}
+import java.time.{Duration, LocalDateTime}
 
 import akka.actor.{Actor, ActorRef, Props, Stash, Timers}
 import akka.event.Logging
 
 import scala.collection.mutable
 import scala.concurrent.duration._
+import scala.language.postfixOps
 
 case class DroneState(mode: DroneMode.DroneMode, position: Position, energy: Double, chargingInChargerId: Option[ChargerId], observedFieldIds: Map[String, FieldObservation])
 case class FlockState(mode: FlockMode.FlockMode, position: Position, observedDrones: List[Position], eatTicks: Int)
@@ -25,7 +25,7 @@ final case class FlockAck(origUUID: String, state: FlockState) extends Ack
 final case class ResolverAck(origUUID: String, result: ResolutionResult) extends Ack
 
 object Simulation {
-  def props(withEnsembles: Boolean) = Props(new Simulation(withEnsembles))
+  def props(withEnsembles: Boolean, randSeed: Int = 0, traceFileBase: String = null) = Props(new Simulation(withEnsembles, randSeed, traceFileBase))
 
   final case class Play(tickIntervalMs: Int)
   case object Pause
@@ -50,7 +50,7 @@ object Simulation {
   }
 }
 
-class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stash {
+class Simulation(val withEnsembles: Boolean, val randSeed: Int, val traceFileBase: String) extends Actor with Timers with Stash {
   simulation =>
 
   import Simulation.State._
@@ -93,8 +93,12 @@ class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stas
       case Status => processStatus()
 
       case Tick =>
-        log.debug(s"Awaiter[${name}].Tick")
-        log.warning("Dropping one tick")
+        if (tickIntervalMs > 0) {
+          log.debug(s"Awaiter[${name}].Tick")
+          log.warning("Dropping one tick")
+        } else {
+          stash()
+        }
 
       case msg =>
         log.debug(s"Awaiter[${name}]._ ... ${msg}")
@@ -141,26 +145,26 @@ class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stas
   private val startTime = LocalDateTime.parse("2020-01-01T08:00:00")
   private val endTime = startTime plus Duration.ofHours(10)
 
-  private val resolver = context.actorOf(Resolver.props(), name = "resolver")
+  private val resolver = context.actorOf(Resolver.props(traceFileBase), name = "resolver")
   private var drones = mutable.ListBuffer.empty[ActorRef]
   private var flocks = mutable.ListBuffer.empty[ActorRef]
 
   private val droneStates = mutable.HashMap.empty[String, DroneState]
   private val flockStates = mutable.HashMap.empty[String, FlockState]
-  private var resolutionResult: ResolutionResult = null
+  private var resolutionResult: ResolutionResult = _
 
   private var tickIntervalMs = 0
 
-  flocks += context.actorOf(Flock.props(), "Flock-1")
-  flocks += context.actorOf(Flock.props(), "Flock-2")
-  flocks += context.actorOf(Flock.props(), "Flock-3")
-  flocks += context.actorOf(Flock.props(), "Flock-4")
-  flocks += context.actorOf(Flock.props(), "Flock-5")
+  flocks += context.actorOf(Flock.props(randSeed), "Flock-1")
+  flocks += context.actorOf(Flock.props(randSeed), "Flock-2")
+  flocks += context.actorOf(Flock.props(randSeed), "Flock-3")
+  flocks += context.actorOf(Flock.props(randSeed), "Flock-4")
+  flocks += context.actorOf(Flock.props(randSeed), "Flock-5")
 
-  drones += context.actorOf(Drone.props(withEnsembles), "Drone-1")
-  drones += context.actorOf(Drone.props(withEnsembles), "Drone-2")
-  drones += context.actorOf(Drone.props(withEnsembles), "Drone-3")
-  drones += context.actorOf(Drone.props(withEnsembles), "Drone-4")
+  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-1")
+  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-2")
+  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-3")
+  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-4")
 
   processReset()
 
@@ -183,7 +187,7 @@ class Simulation(val withEnsembles: Boolean) extends Actor with Timers with Stas
     ticksToResolution = 0
     droneStates.clear()
     flockStates.clear()
-    resolutionResult = null
+    resolutionResult = ResolutionResult(List())
 
     resetAwaiter.tellWithRSVP(resolver, SimReset())
 

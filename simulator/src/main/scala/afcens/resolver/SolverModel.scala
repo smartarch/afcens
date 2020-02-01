@@ -129,7 +129,7 @@ class SolverModel extends ChocoModel {
     }
 
     if (clauses.nonEmpty)
-      LogicalLogOp(LogOp.and(clauses: _*))
+      LogicalLogOp(LogOp.and(clauses.toSeq: _*))
     else
       LogicalBoolean(true)
   }

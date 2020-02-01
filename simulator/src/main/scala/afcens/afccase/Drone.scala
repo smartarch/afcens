@@ -24,7 +24,7 @@ object Drone {
   val energyDrainStayingPerTick = 0.001
   val energyChargePerTick = 0.015
 
-  def props(withEnsembles: Boolean) = Props(new Drone(withEnsembles))
+  def props(withEnsembles: Boolean, randSeed: Int) = Props(new Drone(withEnsembles, randSeed))
 }
 
 object ObservedFieldStatus extends Enumeration {
@@ -45,11 +45,11 @@ Basic behavior:
   - If no birds are observed, it patrols over the fields in 1..5 order
  */
 
-class Drone(val withEnsembles: Boolean) extends Actor {
+class Drone(val withEnsembles: Boolean, randSeed: Int) extends Actor {
   val id = self.path.name
 
   private val log = Logging(context.system, this)
-  implicit private val random = new Random(id.hashCode)
+  implicit private val random = new Random(id.hashCode + randSeed)
 
   import DroneMode._
 

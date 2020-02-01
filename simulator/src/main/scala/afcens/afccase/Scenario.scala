@@ -2,6 +2,9 @@ package afcens.afccase
 
 import afcens.resolver.{Component, Ensemble, EnsembleSystem, MemberGroup}
 import ObservedFieldStatus._
+import afcens.MarshallersSupport
+import spray.json._
+
 import scala.collection.mutable
 
 case class Position(x: Double, y: Double) {
@@ -94,7 +97,7 @@ case class FlockComponent(position: Position) extends Component {
 }
 
 
-class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
+class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks with MarshallersSupport {
   def dist2Utility(pos1: Position, pos2: Position) = (10 - pos1.distance(pos2) / 30).round.toInt
 
   val allDrones = for ((id, st) <- simulationState.drones) yield DroneComponent(id, st.mode, st.position, st.energy, st.chargingInChargerId, st.observedFieldIds)
@@ -124,7 +127,7 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
       }
     }
 
-    class ApproachFieldUnderThreat(field: FieldComponent) extends Ensemble {
+    class ApproachFieldUnderThreat(val field: FieldComponent) extends Ensemble {
       name(s"ApproachFieldUnderThreat ensemble for field ${field.idx}")
 
       val flocksInField = allFlocks.filter(x => field.area.contains(x.position))
@@ -166,6 +169,11 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
           }
         }
       }
+
+      def toJson: JsValue = JsObject(
+        "id" -> field.idx.toJson,
+        "drones" -> drones.selectedMembers.map(_.id).toJson
+      )
     }
 
 
@@ -178,7 +186,7 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
       }
     }
 
-    class ScareFormation(field: FieldComponent) extends Ensemble {
+    class ScareFormation(val field: FieldComponent) extends Ensemble {
       name(s"ScareFormation ensemble for field ${field.idx}")
 
       val dronesInField = operationalDrones.filter(x => field.area.contains(x.position))
@@ -192,7 +200,7 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
       }
        */
 
-      class SegmentAssignment(segmentCenter: Position) extends Ensemble {
+      class SegmentAssignment(val segmentCenter: Position) extends Ensemble {
         name(s"SegmentProtectionAssignment for field ${field.idx} @ ${segmentCenter.x},${segmentCenter.y}")
         val drone = oneOf(operationalDrones)
 
@@ -203,6 +211,11 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
         tasks {
           moveTask(drone, segmentCenter)
         }
+
+        def toJson: JsValue = JsObject(
+          "id" -> segmentCenter.toJson,
+          "drone" -> drone.selectedMembers.head.id.toJson
+        )
       }
 
       val protectionSegmentAssignments = rules(segmentCenters.map(new SegmentAssignment(_)))
@@ -216,10 +229,16 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
       constraint(
         protectionSegmentAssignments.map(_.drone).allDisjoint
       )
+
+      def toJson: JsValue = JsObject(
+        "id" -> field.idx.toJson,
+        "protectionSegmentAssignments" -> protectionSegmentAssignments.selectedMembers.map(_.toJson).toJson,
+        "drones" -> drones.selectedMembers.map(_.id).toJson
+      )
     }
 
 
-    class PatrolUnknown(field: FieldComponent) extends Ensemble {
+    class PatrolUnknown(val field: FieldComponent) extends Ensemble {
       name(s"PatrolUnknown ensemble for field ${field.idx}")
 
       val drone = oneOf(operationalDrones)
@@ -232,6 +251,11 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
       tasks {
         moveTask(drone, fieldCenter)
       }
+
+      def toJson: JsValue = JsObject(
+        "id" -> field.idx.toJson,
+        "drone" -> drone.selectedMembers.head.id.toJson
+      )
     }
 
 
@@ -249,6 +273,11 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
       tasks {
         chargeTask(drone, charger.chargerId)
       }
+
+      def toJson: JsValue = JsObject(
+        "id" -> charger.idx.toJson,
+        "drone" -> drone.selectedMembers.head.id.toJson
+      )
     }
 
 
@@ -267,6 +296,13 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks {
     constraint(
       (patrolUnknown.map(_.drone) ++ approachFieldsUnderThreat.map(_.drones) ++ scareFormations.map(_.drones)).allDisjoint &&
       chargerAssignments.map(_.drone).allDisjoint
+    )
+
+    def toJson: JsValue = JsObject(
+      "patrolUnknown" -> patrolUnknown.selectedMembers.map(_.toJson).toJson,
+      "chargerAssignments" -> chargerAssignments.selectedMembers.map(_.toJson).toJson,
+      "approachFieldsUnderThreat" -> approachFieldsUnderThreat.selectedMembers.map(_.toJson).toJson,
+      "scareFormations" -> scareFormations.selectedMembers.map(_.toJson).toJson,
     )
   }
 

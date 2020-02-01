@@ -22,7 +22,7 @@ object Flock {
   val leaveFieldProb = 0.002
   val chooseFieldProb = 0.8
 
-  def props() = Props(new Flock())
+  def props(randSeed: Int) = Props(new Flock(randSeed))
 }
 
 /*
@@ -39,11 +39,11 @@ Basic behavior:
 
 case class ObservedDrone(time: LocalDateTime, position: Position)
 
-class Flock() extends Actor {
+class Flock(randSeed: Int) extends Actor {
   val id = self.path.name
 
   private val log = Logging(context.system, this)
-  implicit private val random = new Random(id.hashCode)
+  implicit private val random = new Random(id.hashCode + randSeed)
 
   import FlockMode._
 

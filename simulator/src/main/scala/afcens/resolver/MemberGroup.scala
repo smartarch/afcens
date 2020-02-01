@@ -228,7 +228,7 @@ class MemberGroup[+MemberType](val name: String, values: Iterable[MemberType])
     * @return a collection of those member instances that are selected in the solution.
     */
   def selectedMembers: Iterable[MemberType] =
-    for (idx <- _solverModel.solution.getSetVal(allMembersVar))
+    for (idx <- _solverModel.solution.getSetVal(allMembersVar).toSeq)
       yield allMembers(idx)
 
   override def toString: String = s"<MemberGroup:$allMembersVarName:$name>"

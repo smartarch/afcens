@@ -67,7 +67,7 @@ trait CommonImplicits {
 
         // generate an allDisjoint constraint over the newly created SetVars, ensuring
         // that no global index appears in more than one of the sets
-        LogicalBoolVar(_solverModel.allDisjoint(allMembersVars: _*).reify())
+        LogicalBoolVar(_solverModel.allDisjoint(allMembersVars.toSeq: _*).reify())
       }
 
     /** Total cardinality of the groups in the collection.

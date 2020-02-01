@@ -1,5 +1,6 @@
 package afcens
 
+import scala.language.postfixOps
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.StatusCodes._
@@ -21,7 +22,7 @@ object Main extends MarshallersSupport {
 
     implicit val timeout = Timeout(1 second)
 
-    val simulation = system.actorOf(Simulation.props(true))
+    val simulation = system.actorOf(Simulation.props(false, 0))
 
     // simulation ! Simulation.Play(100)
 
