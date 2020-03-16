@@ -1,7 +1,8 @@
 package afcens.afccase
 
-import java.io.{File, PrintWriter}
+import java.io.{File, FileOutputStream, PrintWriter}
 import java.time.LocalDateTime
+import java.util.zip.GZIPOutputStream
 
 import afcens.MarshallersSupport
 import afcens.afccase.Simulation.{SimReset, SimStep}
@@ -15,7 +16,7 @@ object Resolver {
 
 class Resolver(val traceFileBase: String) extends Actor with MarshallersSupport {
 
-  val traceFileWriter = if (traceFileBase != null) new PrintWriter(new File(traceFileBase + "-resolver.jsonl" )) else null
+  val traceFileWriter = if (traceFileBase != null) new PrintWriter(new GZIPOutputStream(new FileOutputStream(traceFileBase + ".jsonl.gz"))) else null
 
   private val log = Logging(context.system, this)
 
@@ -51,7 +52,9 @@ class Resolver(val traceFileBase: String) extends Actor with MarshallersSupport 
       "time" -> simulationState.time.toJson,
       "drones" -> simulationState.drones.toJson,
       "flocks" -> simulationState.flocks.toJson,
-      "ensembles" -> scenario.root.instance.toJson
+      "tasks" -> simulationState.tasks.toJson,
+      "ensembles" -> scenario.root.instance.toJson,
+      "eatTicks" -> simulationState.eatTicks.toJson
     )
 
     if (traceFileWriter != null) {

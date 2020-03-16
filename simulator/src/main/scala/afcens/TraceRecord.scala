@@ -1,5 +1,7 @@
 package afcens
 
+import java.io.File
+
 import afcens.afccase.{ScenarioMap, Simulation, SimulationState}
 import akka.actor.{ActorRef, ActorSystem}
 import akka.event.{LogSource, Logging}
@@ -16,7 +18,7 @@ object TraceRecord {
     implicit val system = ActorSystem("afcens-trace-record")
     implicit val executionContext = system.dispatcher
 
-    implicit val timeout = Timeout(1 second)
+    implicit val timeout = Timeout(60 second)
 
     implicit val logSource = new LogSource[TraceRecord.type] {
       def genString(x: TraceRecord.type) = "Main"
@@ -25,9 +27,10 @@ object TraceRecord {
     val log = Logging(system, this)
 
     val concurrencyLevel = 32
-    val iterationCount = 4096
+    val iterationStart = args(0).toInt
+    val iterationUntil = args(1).toInt
 
-    var iterationsToGo = (0 until iterationCount).toList
+    var iterationsToGo = (iterationStart until iterationUntil).toList
     var iterationsInProgress = List.empty[(Int, ActorRef)]
 
     while (!iterationsToGo.isEmpty || !iterationsInProgress.isEmpty) {
@@ -49,7 +52,11 @@ object TraceRecord {
         val iterIdx = iterationsToGo.head
         iterationsToGo = iterationsToGo.tail
 
-        val sim = system.actorOf(Simulation.props(true, iterIdx, "traces/trace-" + iterIdx))
+        val dirPath = f"traces/v2/${iterIdx / 1000}%04d"
+
+        (new File(dirPath)).mkdirs()
+
+        val sim = system.actorOf(Simulation.props(true, iterIdx, f"${dirPath}/${iterIdx % 1000}%03d"))
         sim ! Simulation.Play(0)
 
         iterationsInProgress = ((iterIdx, sim)) :: iterationsInProgress

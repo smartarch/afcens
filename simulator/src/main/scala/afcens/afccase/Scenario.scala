@@ -51,6 +51,7 @@ case class DroneComponent(
 }
 
 
+/*
 case class FieldComponent(idx: Int, fieldObservations: List[FieldObservation]) extends Component {
   name(s"Field ${idx}")
 
@@ -84,6 +85,21 @@ case class FieldComponent(idx: Int, fieldObservations: List[FieldObservation]) e
 
   val area = FieldIdHelper.area(idx)
 }
+*/
+
+case class FieldComponent(idx: Int, flocks: Map[String, FlockState]) extends Component {
+  name(s"Field ${idx}")
+
+  val center = FieldIdHelper.center(idx)
+  val area = FieldIdHelper.area(idx)
+
+  val isUnknown = false
+
+  val isUnderThreat = flocks.values.exists(flock => area.contains(flock.position))
+
+  val requiredDroneCountForProtection = FieldIdHelper.protectingDroneCountRequired(idx)
+  val protectionCenters = FieldIdHelper.centers(idx, requiredDroneCountForProtection)
+}
 
 case class ChargerComponent(idx: Int, isFree: Boolean) extends Component {
   name(s"Charger ${idx}")
@@ -101,7 +117,7 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks with Ma
   def dist2Utility(pos1: Position, pos2: Position) = (10 - pos1.distance(pos2) / 30).round.toInt
 
   val allDrones = for ((id, st) <- simulationState.drones) yield DroneComponent(id, st.mode, st.position, st.energy, st.chargingInChargerId, st.observedFieldIds)
-  val allFields = for (idx <- 0 until ScenarioMap.fieldCount) yield FieldComponent(idx, allDrones.flatMap(_.observedFields.values.filter(_.fieldId.idx == idx)).toList)
+  val allFields = for (idx <- 0 until ScenarioMap.fieldCount) yield FieldComponent(idx, simulationState.flocks)
   val allChargers = for (idx <- 0 until ScenarioMap.chargerCount) yield ChargerComponent(idx, allDrones.forall(_.chargingInChargerId != Some(ChargerId(idx))))
   val allFlocks = simulationState.flocks.values.map(x => FlockComponent(x.position))
 
