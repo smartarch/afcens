@@ -52,11 +52,11 @@ object TraceRecord {
         val iterIdx = iterationsToGo.head
         iterationsToGo = iterationsToGo.tail
 
-        val dirPath = f"traces/v2/${iterIdx / 1000}%04d"
+        val dirPath = f"traces/v3/${iterIdx / 1000}%04d"
 
         (new File(dirPath)).mkdirs()
 
-        val sim = system.actorOf(Simulation.props(true, iterIdx, f"${dirPath}/${iterIdx % 1000}%03d"))
+        val sim = system.actorOf(Simulation.props(true, iterIdx, 10, f"${dirPath}/${iterIdx % 1000}%03d", null))
         sim ! Simulation.Play(0)
 
         iterationsInProgress = ((iterIdx, sim)) :: iterationsInProgress

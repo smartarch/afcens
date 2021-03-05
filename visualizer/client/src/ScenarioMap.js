@@ -16,6 +16,7 @@ import {SVG} from "../../ivis-core/client/src/ivis/SVG";
 import scenarioMapSvg from "../images/fields-symbols.svg";
 import { select, event as d3Event, mouse } from 'd3-selection';
 import { rgb } from 'd3-color';
+import PropTypes from "prop-types";
 import * as d3Format from "d3-format";
 
 const State = {
@@ -60,7 +61,8 @@ const minorStepsInRefetchPeriod = 5;
     withErrorHandling,
     withPageHelpers,
     requiresAuthenticatedUser
-])export default class ScenarioMap extends Component {
+])
+export default class ScenarioMap extends Component {
     constructor(props) {
         super(props);
 
@@ -101,6 +103,10 @@ const minorStepsInRefetchPeriod = 5;
         };
     }
 
+    static propTypes = {
+        simulationId: PropTypes.string
+    }
+
     reset() {
         this.keyframes = [];
         this.minorStep = 0;
@@ -109,7 +115,7 @@ const minorStepsInRefetchPeriod = 5;
 
     @withAsyncErrorHandler
     async play() {
-        await axios.post(getUrl('sim/play'));
+        await axios.post(getUrl(`sim/${this.props.simulationId}/play`));
 
         this.setState({
             playState: State.PLAYING
@@ -118,7 +124,7 @@ const minorStepsInRefetchPeriod = 5;
 
     @withAsyncErrorHandler
     async stop() {
-        await axios.post(getUrl('sim/reset'));
+        await axios.post(getUrl(`sim/${this.props.simulationId}/reset`));
 
         this.setState({
             playState: State.START,
@@ -130,7 +136,7 @@ const minorStepsInRefetchPeriod = 5;
 
     @withAsyncErrorHandler
     async pause() {
-        await axios.post(getUrl('sim/pause'));
+        await axios.post(getUrl(`sim/${this.props.simulationId}/pause`));
 
         this.setState({
             playState: State.PAUSED
@@ -139,7 +145,7 @@ const minorStepsInRefetchPeriod = 5;
 
     @withAsyncErrorHandler
     async getStatus() {
-        const resp = await axios.get(getUrl('sim/status'));
+        const resp = await axios.get(getUrl(`sim/${this.props.simulationId}/status`));
         const ts = moment(resp.data.time);
         const kf = this.keyframes;
 

@@ -10,23 +10,23 @@ function getSimulatorUrl(path) {
     return config.simulator.url + path;
 }
 
-router.postAsync('/play', passport.loggedIn, passport.csrfProtection, async (req, res) => {
-    const resp = await axios.post(getSimulatorUrl('play'));
+router.postAsync('/:simulationId/play', passport.loggedIn, passport.csrfProtection, async (req, res) => {
+    const resp = await axios.post(getSimulatorUrl(req.params.simulationId + '/play'));
     return res.json();
 });
 
-router.postAsync('/pause', passport.loggedIn, passport.csrfProtection, async (req, res) => {
-    const resp = await axios.post(getSimulatorUrl('pause'));
+router.postAsync('/:simulationId/pause', passport.loggedIn, passport.csrfProtection, async (req, res) => {
+    const resp = await axios.post(getSimulatorUrl(req.params.simulationId + '/pause'));
     return res.json();
 });
 
-router.postAsync('/reset', passport.loggedIn, passport.csrfProtection, async (req, res) => {
-    const resp = await axios.post(getSimulatorUrl('reset'));
+router.postAsync('/:simulationId/reset', passport.loggedIn, passport.csrfProtection, async (req, res) => {
+    const resp = await axios.post(getSimulatorUrl(req.params.simulationId + '/reset'));
     return res.json();
 });
 
-router.getAsync('/status', passport.loggedIn, async (req, res) => {
-    const resp = await axios.get(getSimulatorUrl('status'));
+router.getAsync('/:simulationId/status', passport.loggedIn, async (req, res) => {
+    const resp = await axios.get(getSimulatorUrl(req.params.simulationId + '/status'));
     return res.json(resp.data);
 });
 

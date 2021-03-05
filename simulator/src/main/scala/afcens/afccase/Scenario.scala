@@ -1,6 +1,6 @@
 package afcens.afccase
 
-import afcens.resolver.{Component, Ensemble, EnsembleSystem, MemberGroup}
+import afcens.resolver.{Component, Ensemble, EnsembleGroup, EnsembleSystem, MemberGroup}
 import ObservedFieldStatus._
 import afcens.MarshallersSupport
 import spray.json._
@@ -113,8 +113,8 @@ case class FlockComponent(position: Position) extends Component {
 }
 
 
-class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks with MarshallersSupport {
-  def dist2Utility(pos1: Position, pos2: Position) = (10 - pos1.distance(pos2) / 30).round.toInt
+class Scenario(simulationState: SimulationState, quantization: Int, approachFieldUnderThreatAssignment: Map[Int, List[String]]) extends WithAFCEnsTasks with MarshallersSupport {
+  def dist2Utility(pos1: Position, pos2: Position) = ((300 - pos1.distance(pos2)) / quantization).round.toInt
 
   val allDrones = for ((id, st) <- simulationState.drones) yield DroneComponent(id, st.mode, st.position, st.energy, st.chargingInChargerId, st.observedFieldIds)
   val allFields = for (idx <- 0 until ScenarioMap.fieldCount) yield FieldComponent(idx, simulationState.flocks)
@@ -143,14 +143,45 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks with Ma
       }
     }
 
-    class ApproachFieldUnderThreat(val field: FieldComponent) extends Ensemble {
-      name(s"ApproachFieldUnderThreat ensemble for field ${field.idx}")
-
+    abstract class ApproachFieldUnderThreat(val field: FieldComponent) extends Ensemble {
       val flocksInField = allFlocks.filter(x => field.area.contains(x.position))
       val dronesInField = operationalDrones.filter(x => field.area.contains(x.position))
 
       val droneCount = field.requiredDroneCountForProtection
       val center = field.center
+
+      def selectedDrones: Iterable[DroneComponent]
+
+      tasks {
+        if (flocksInField.isEmpty) {
+          for (drone <- selectedDrones) moveTask(drone, center)
+        } else {
+          val selectedDronesInFieldCount = selectedDrones.count(x => field.area.contains(x.position))
+
+          val flockPos = flocksInField.head.position
+
+          val step = Flock.disturbRadius * 2
+          var x = flockPos.x - (selectedDronesInFieldCount - 1) * Flock.disturbRadius
+
+          for (drone <- selectedDrones) {
+            if (field.area.contains(drone.position)) {
+              moveTask(drone, Position(x, flockPos.y))
+              x += step
+            } else {
+              moveTask(drone, center)
+            }
+          }
+        }
+      }
+
+      def toJson: JsValue = JsObject(
+        "id" -> field.idx.toJson,
+        "drones" -> selectedDrones.map(_.id).toJson
+      )
+    }
+
+    class ComputedApproachFieldUnderThreat(field: FieldComponent) extends ApproachFieldUnderThreat(field) {
+      name(s"ApproachFieldUnderThreat ensemble for field ${field.idx}")
 
       /*
       situation {
@@ -164,32 +195,14 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks with Ma
         drones.sum(x => if (field.area.contains(x.position)) 10 else dist2Utility(x.position, center))
       }
 
-      tasks {
-        if (flocksInField.isEmpty) {
-          for (drone <- drones.selectedMembers) moveTask(drone, center)
-        } else {
-          val selectedDronesInFieldCount = drones.selectedMembers.count(x => field.area.contains(x.position))
+      def selectedDrones = drones.selectedMembers
+    }
 
-          val flockPos = flocksInField.head.position
+    class PreAssignedApproachFieldUnderThreat(field: FieldComponent) extends ApproachFieldUnderThreat(field) {
+      name(s"PreAssignedApproachFieldUnderThreat ensemble for field ${field.idx}")
 
-          val step = Flock.disturbRadius * 2
-          var x = flockPos.x - (selectedDronesInFieldCount - 1) * Flock.disturbRadius
-
-          for (drone <- drones.selectedMembers) {
-            if (field.area.contains(drone.position)) {
-              moveTask(drone, Position(x, flockPos.y))
-              x += step
-            } else {
-              moveTask(drone, center)
-            }
-          }
-        }
-      }
-
-      def toJson: JsValue = JsObject(
-        "id" -> field.idx.toJson,
-        "drones" -> drones.selectedMembers.map(_.id).toJson
-      )
+      val selectedDroneIds = approachFieldUnderThreatAssignment(field.idx)
+      val selectedDrones = allDrones.filter(drone => selectedDroneIds.contains(drone.id))
     }
 
 
@@ -299,20 +312,40 @@ class Scenario(simulationState: SimulationState) extends WithAFCEnsTasks with Ma
 
     val patrolUnknown = ensembles(fieldsWithUnknownStatus.map(new PatrolUnknown(_)))
     val chargerAssignments = ensembles(freeChargers.map(new ChargerAssignment(_)))
-    val approachFieldsUnderThreat = ensembles(fieldsUnderThreat.filter(ApproachFieldUnderThreat.isInSituation(_)).map(new ApproachFieldUnderThreat(_)))
+
     val scareFormations = ensembles(fieldsUnderThreat.filter(ScareFormation.isInSituation(_)).map(new ScareFormation(_)))
 
-    utility {
-      approachFieldsUnderThreat.sum(assignment => assignment.utility) +
-      scareFormations.sum(assignment => assignment.utility) +
-      patrolUnknown.sum(assignment => assignment.utility) / 4 + // The division by 4 expresses the relatively lower importance to the protection
-      chargerAssignments.sum(assignment => assignment.utility)
-    }
+    var approachFieldsUnderThreat: EnsembleGroup[ApproachFieldUnderThreat] = _
+    if (approachFieldUnderThreatAssignment == null) {
+      val computedApproachFieldsUnderThreat = ensembles(fieldsUnderThreat.filter(ApproachFieldUnderThreat.isInSituation(_)).map(new ComputedApproachFieldUnderThreat(_)))
+      approachFieldsUnderThreat = computedApproachFieldsUnderThreat
 
-    constraint(
-      (patrolUnknown.map(_.drone) ++ approachFieldsUnderThreat.map(_.drones) ++ scareFormations.map(_.drones)).allDisjoint &&
-      chargerAssignments.map(_.drone).allDisjoint
-    )
+      utility {
+        computedApproachFieldsUnderThreat.sum(assignment => assignment.utility) +
+          scareFormations.sum(assignment => assignment.utility) +
+          patrolUnknown.sum(assignment => assignment.utility) / 4 + // The division by 4 expresses the relatively lower importance to the protection
+          chargerAssignments.sum(assignment => assignment.utility)
+      }
+
+      constraint(
+        (patrolUnknown.map(_.drone) ++ computedApproachFieldsUnderThreat.map(_.drones) ++ scareFormations.map(_.drones)).allDisjoint &&
+          chargerAssignments.map(_.drone).allDisjoint
+      )
+
+    } else {
+      approachFieldsUnderThreat = rules(fieldsUnderThreat.map(new PreAssignedApproachFieldUnderThreat(_)))
+
+      utility {
+        scareFormations.sum(assignment => assignment.utility) +
+          patrolUnknown.sum(assignment => assignment.utility) / 4 + // The division by 4 expresses the relatively lower importance to the protection
+          chargerAssignments.sum(assignment => assignment.utility)
+      }
+
+      constraint(
+        (patrolUnknown.map(_.drone) ++ scareFormations.map(_.drones)).allDisjoint &&
+          chargerAssignments.map(_.drone).allDisjoint
+      )
+    }
 
     def toJson: JsValue = JsObject(
       "patrolUnknown" -> patrolUnknown.selectedMembers.map(_.toJson).toJson,

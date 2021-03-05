@@ -4,7 +4,8 @@ version := "1.0"
 
 scalaVersion := "2.13.1"
 
-mainClass in (Compile, run) := Some("afcens.TraceRecord")
+// sbt "runMain afcens.TraceRecord 000000 500000"
+mainClass in (Compile, run) := Some("afcens.PredictorMain")
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-reflect" % "2.13.1",

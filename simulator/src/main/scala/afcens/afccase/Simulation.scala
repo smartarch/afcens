@@ -25,7 +25,7 @@ final case class FlockAck(origUUID: String, state: FlockState) extends Ack
 final case class ResolverAck(origUUID: String, result: ResolutionResult) extends Ack
 
 object Simulation {
-  def props(withEnsembles: Boolean, randSeed: Int = 0, traceFileBase: String = null) = Props(new Simulation(withEnsembles, randSeed, traceFileBase))
+  def props(withEnsembles: Boolean, randSeed: Int = 0, quantization: Int, traceFileBase: String, predictorUrl: String) = Props(new Simulation(withEnsembles, randSeed, quantization, traceFileBase, predictorUrl))
 
   final case class Play(tickIntervalMs: Int)
   case object Pause
@@ -48,9 +48,12 @@ object Simulation {
     val PAUSED = Value(2)
     val END = Value(3)
   }
+
+  val droneCount = 4
+  val flockCount = 5
 }
 
-class Simulation(val withEnsembles: Boolean, val randSeed: Int, val traceFileBase: String) extends Actor with Timers with Stash {
+class Simulation(val withEnsembles: Boolean, val randSeed: Int, val quantization: Int, val traceFileBase: String, val predictorUrl: String) extends Actor with Timers with Stash {
   simulation =>
 
   import Simulation.State._
@@ -145,7 +148,12 @@ class Simulation(val withEnsembles: Boolean, val randSeed: Int, val traceFileBas
   private val startTime = LocalDateTime.parse("2020-01-01T08:00:00")
   private val endTime = startTime plus Duration.ofHours(10)
 
-  private val resolver = context.actorOf(Resolver.props(traceFileBase), name = "resolver")
+  private val resolver =
+    if (predictorUrl != null)
+      context.actorOf(PredictorResolver.props(predictorUrl, traceFileBase, quantization), name = "resolver")
+    else
+      context.actorOf(Resolver.props(traceFileBase, quantization), name = "resolver")
+
   private var drones = mutable.ListBuffer.empty[ActorRef]
   private var flocks = mutable.ListBuffer.empty[ActorRef]
 
@@ -155,17 +163,13 @@ class Simulation(val withEnsembles: Boolean, val randSeed: Int, val traceFileBas
 
   private var tickIntervalMs = 0
 
-  flocks += context.actorOf(Flock.props(randSeed), "Flock-1")
-  flocks += context.actorOf(Flock.props(randSeed), "Flock-2")
-  flocks += context.actorOf(Flock.props(randSeed), "Flock-3")
-  flocks += context.actorOf(Flock.props(randSeed), "Flock-4")
-  flocks += context.actorOf(Flock.props(randSeed), "Flock-5")
+  for (i <- 1 to flockCount) {
+    flocks += context.actorOf(Flock.props(randSeed), s"Flock-${i}")
+  }
 
-  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-1")
-  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-2")
-  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-3")
-  drones += context.actorOf(Drone.props(withEnsembles, randSeed), "Drone-4")
-
+  for (i <- 1 to droneCount) {
+    drones += context.actorOf(Drone.props(withEnsembles, randSeed), s"Drone-${i}")
+  }
   processReset()
 
   private def simulationState = SimulationState(
