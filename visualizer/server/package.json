@@ -13,7 +13,7 @@
   "optionalDependencies": {},
   "dependencies": {
     "axios": "^0.16.2",
-    "moment": "^2.18.1",
+    "moment": "^2.29.2",
     "moment-timezone": "^0.5.21"
   }
 }
